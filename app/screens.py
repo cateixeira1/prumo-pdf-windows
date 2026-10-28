@@ -826,7 +826,7 @@ class DocumentScreen(Screen):
             return t
 
         has_ocr = lib.has_ocr_text(item)
-        tile("Ler", "book", "blue", lambda: app.read(item))
+        tile("Ler", "book", "blue", lambda: app.read(item), subtitle="Páginas, modo leitor e busca")
         tile("Compartilhar", "share", "green", lambda: app.actions.share([item]),
              subtitle="Copiar, exportar, Explorador")
         tile("OCR", "textscan", "orange", lambda: self._ocr(item), count=self._ocr_count(item),

@@ -115,6 +115,9 @@ class MainWindow(QMainWindow):
         return any(isinstance(c, _Overlay) and c.isVisible() for c in self.children())
 
     def _focus_search(self):
+        if hasattr(self.current(), "open_search"):   # leitor: abre a barra de busca do documento
+            self.current().open_search()
+            return
         s = getattr(self.current(), "search", None)
         if s is not None:
             s.edit.setFocus()
@@ -191,15 +194,21 @@ class MainWindow(QMainWindow):
         """Leitor do próprio Prumo. Se houver as duas versões, pergunta qual ler (como no iPhone)."""
         from ios_kit import action_sheet
         from reader import ReaderScreen
+        from reader import TextReaderScreen
         lib = self.lib
         ocr = lib.ocr_copy(item)
         if ocr is not None and not item.meta.is_ocr_result:
-            idx = action_sheet(self, "Ler qual versão?",
-                               "A cópia com OCR tem texto selecionável. O original fica como foi recebido.",
-                               [("Com OCR", "default", "textscan"), ("Original", "default", "docs")])
+            idx = action_sheet(self, "Como você quer ler?",
+                               "O modo leitor mostra o texto reconhecido pelo OCR em parágrafos, como uma nota. "
+                               "Dá para alternar entre os modos a qualquer momento, no alto do leitor.",
+                               [("Como foi escaneado", "default", "docs"), ("Com OCR (página com texto)", "default", "textscan"),
+                                ("Modo leitor (só o texto)", "default", "text")])
             if idx is None:
                 return
-            item = ocr if idx == 0 else item
+            if idx == 2:
+                self.push(TextReaderScreen(self, ocr.id))
+                return
+            item = ocr if idx == 1 else item
         self.push(ReaderScreen(self, item.id))
 
     def organize(self, item):

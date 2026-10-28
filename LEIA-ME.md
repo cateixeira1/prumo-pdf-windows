@@ -6,6 +6,8 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **Cartões de PDF** com a estrela de favorito (clique para preencher e mandar para Favoritos) e os três pontos ⋮ no canto inferior direito, que abrem as opções (o botão direito do mouse continua funcionando).
 - **Pastas:** ao criar uma, já dá para adicionar PDFs do computador ou de qualquer parte do Prumo (outra pasta, Todos os PDFs, Favoritos…), movendo ou copiando.
 - **Leitor próprio**, com zoom e troca entre o original e a cópia com OCR, sem precisar abrir outro programa.
+- **Modo leitor:** só o texto (do OCR ou do próprio PDF), em parágrafos, numa coluna confortável; letra maior ou menor (A−/A+), fonte com ou sem serifa e fundo branco, sépia ou escuro; copiar trechos ou o texto todo. Páginas com baixa confiança no OCR aparecem marcadas.
+- **Busca dentro do PDF (Ctrl+F)**, nas páginas e no modo leitor: não precisa de acentos nem maiúsculas (“indenizacao” acha “Indenização”), destaca todas as ocorrências e anda entre elas com Enter / Shift+Enter ou F3.
 - **Organizar páginas:** arraste para mudar a ordem (a lista rola sozinha perto das bordas), gire, exclua, desfaça; Ctrl+roda do mouse muda o tamanho das miniaturas.
 - **Incluir páginas** de outro PDF (ou do próprio): todas ou trechos como 5-15, no início, no fim ou depois de uma página.
 - **Converter em PDF:** fotos e imagens (JPG, PNG, HEIC do iPhone, TIFF de várias páginas, BMP, GIF, WebP), Word, Excel e PowerPoint (DOC, DOCX, RTF, ODT, XLS, XLSX, ODS, PPT, PPTX, ODP), texto (TXT, CSV) e HTML. Várias fotos podem virar um PDF só, uma por página A4, ou um PDF para cada; depois, o app pergunta se quer fazer o OCR. Os arquivos do Office são convertidos pelo próprio Office instalado (como o “Salvar como PDF”) ou, sem Office, pelo LibreOffice; sem nenhum dos dois, um .docx ainda é convertido de forma simplificada. Também dá para importar ou arrastar esses arquivos direto: eles viram PDF na hora.
@@ -16,13 +18,13 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 
 Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá para mudar em Ajustes). Para ter backup na nuvem que você usa, escolha uma pasta sincronizada pelo OneDrive, Google Drive, iCloud Drive ou Dropbox.
 
-Próximas etapas: modo leitor e busca no texto, ajustes e backup, correção de páginas curvadas e segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
+Próximas etapas: ajustes e backup, correção de páginas curvadas e segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ---
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.3.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.4.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
