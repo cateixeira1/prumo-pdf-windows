@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QIntValidator, QPainter, QPen, QTransform
-from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QHBoxLayout,
+from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout,
                                QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
                                QWidget)
 
@@ -134,7 +135,10 @@ class Actions:
 def make_doc_tile(app, item, show_folder=False, on_click=None, menu=True):
     tile = DocTile(item, app.hub.thumbs, needs_ocr=app.lib.needs_ocr_attention(item), show_folder=show_folder,
                    show_actions=menu)
-    tile.clicked.connect(on_click or (lambda: app.open_document(item.id)))
+    action = on_click or (lambda: app.open_document(item.id))
+    # O clique do Qt manda um valor (checked); ele não pode chegar à ação, que às vezes tem
+    # argumentos com valor padrão (ex.: lambda it=it), senão o PDF escolhido vira False.
+    tile.clicked.connect(lambda _checked=False: action())
     if menu:
         current = lambda: app.lib.item(item.id) or item  # noqa: E731
         tile.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -334,7 +338,7 @@ class HomeScreen(Screen):
         add(g, "pending", "Aguardando OCR", "textscan", "orange", True,
             lambda: app.push(DocumentGridScreen(app, list_id="pending")))
         add(g, "ocr", "Com OCR", "check", "green", False, lambda: app.push(DocumentGridScreen(app, list_id="ocr")))
-        add(g, "favorites", "Favoritos", "star", "pink", True,
+        add(g, "favorites", "Favoritos", "star", "yellow", True,
             lambda: app.push(DocumentGridScreen(app, list_id="favorites")))
         add(g, "import", "Importar", "import", "blue", True, lambda: app.import_dialog(""))
 
@@ -362,6 +366,10 @@ class HomeScreen(Screen):
                                 subtitle="Fotos e imagens (JPG, PNG, HEIC do iPhone), Word, Excel, PowerPoint, texto")
         self.convert.clicked.connect(lambda: app.convert_dialog(""))
         hb.addWidget(self.convert)
+        credit = Label("Color Software", 12, 600, "secondary", wrap=False)
+        credit.setAlignment(Qt.AlignCenter)
+        credit.setContentsMargins(0, 18, 0, 0)
+        hb.addWidget(credit)
         self.content.addWidget(self.home_box)
         self.results_box = QWidget()
         self.results = QVBoxLayout(self.results_box)
@@ -1875,6 +1883,115 @@ def choose_documents(app, title, multiple=False, excluding=frozenset(), allow_im
 
 # --- Ajustes ----------------------------------------------------------------------
 
+def open_cloud_signin(name: str) -> None:
+    """Abre o aplicativo da nuvem (para entrar na conta) ou a página oficial para instalá-lo."""
+    import subprocess
+
+    import backup
+    if name == "OneDrive":
+        exe = backup.onedrive_exe()
+        if exe is not None:
+            try:
+                subprocess.Popen([str(exe)], close_fds=True)
+                return
+            except OSError:
+                pass
+    info = backup.cloud_app(name)
+    if info:
+        QDesktopServices.openUrl(QUrl(info["url"]))
+
+
+def cloud_dialog(app):
+    """Escolher a nuvem do backup e da sincronização (iCloud Drive, Google Drive, OneDrive, Dropbox)."""
+    import backup
+    while True:
+        clouds = backup.cloud_folders()
+        found: dict[str, Path] = {}
+        for name, folder in clouds:
+            found.setdefault(name, folder)
+        current = backup.cloud_of(app.lib.root, clouds)
+
+        ov = SheetOverlay(app, 560, max_height=760)
+        sheet_header(ov, "Escolher a nuvem", cancel="Fechar")
+        body = QWidget()
+        lay = QVBoxLayout(body)
+        lay.setContentsMargins(16, 4, 16, 16)
+        lay.setSpacing(10)
+        lay.addWidget(Label(
+            "Os PDFs ficam numa pasta “Prumo PDF” dentro da nuvem escolhida: é o backup e também a "
+            "sincronização. No outro aparelho (iPhone ou outro computador), escolha a mesma nuvem no Prumo e os "
+            "PDFs, as pastas e os favoritos aparecem lá.", 13.5))
+        lay.addWidget(Label(
+            "1. Toque em “Entrar ou instalar” e entre na sua conta pelo aplicativo da nuvem.  "
+            "2. Volte aqui e toque em “Procurar de novo”.  3. Toque em “Usar”.", 13, 400, "secondary"))
+        for info in backup.CLOUD_APPS:
+            name = info["name"]
+            card = TileCard()
+            card.lay.setSpacing(6)
+            top = QHBoxLayout()
+            top.addWidget(Label(name, 16, 600), 1)
+            if name == current:
+                state = Label("Em uso", 13, 600, "green", wrap=False)
+            elif name in found:
+                state = Label("Conectado neste computador", 13, 600, "green", wrap=False)
+            else:
+                state = Label("Não encontrado", 13, 600, "secondary", wrap=False)
+            top.addWidget(state)
+            card.lay.addLayout(top)
+            if name in found:
+                card.lay.addWidget(Label(str(found[name]), 12, 400, "secondary"))
+            else:
+                card.lay.addWidget(Label(f"Instale o {info['app']} e entre na sua conta.", 13, 400, "secondary"))
+            card.lay.addWidget(Label(info["iphone"], 13, 400, "secondary"))
+            row = QHBoxLayout()
+            signin = QPushButton("Entrar ou instalar…")
+            signin.setCursor(Qt.PointingHandCursor)
+            signin.setFont(font(14, 600))
+            signin.setStyleSheet(f"QPushButton {{ background: {T.hex('search')}; border: none; border-radius: 8px; "
+                                 f"padding: 8px 14px; color: {T.color('blue').name()}; }}")
+            signin.clicked.connect(lambda _c=False, n=name: open_cloud_signin(n))
+            row.addWidget(signin)
+            if name in found and name != current:
+                use = QPushButton(f"Usar o {name}")
+                use.setCursor(Qt.PointingHandCursor)
+                use.setFont(font(14, 600))
+                use.setStyleSheet(f"QPushButton {{ background: {T.color('blue').name()}; border: none; "
+                                  "border-radius: 8px; padding: 8px 14px; color: white; }")
+                use.clicked.connect(lambda _c=False, n=name: ov.done(("use", n)))
+                row.addWidget(use)
+            row.addStretch(1)
+            card.lay.addLayout(row)
+            lay.addWidget(card)
+        row = QHBoxLayout()
+        again = PrimaryButton("Procurar de novo", "blue")
+        again.clicked.connect(lambda: ov.done(("again", None)))
+        row.addWidget(again)
+        other = PrimaryButton("Outra pasta…", "gray")
+        other.clicked.connect(lambda: ov.done(("other", None)))
+        row.addWidget(other)
+        lay.addLayout(row)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget "
+                             "{ background: transparent; }")
+        scroll.setWidget(body)
+        scroll.setMinimumHeight(min(660, body.sizeHint().height() + 8))
+        ov.lay.addWidget(scroll)
+        result = ov.run()
+        if not result:
+            return
+        kind, name = result
+        if kind == "again":
+            continue
+        if kind == "other":
+            app.change_library()
+        elif kind == "use":
+            app.change_library_to(found[name] / "Prumo PDF")
+        app.current().refresh()
+        return
+
+
 class SettingsScreen(Screen):
     def __init__(self, app):
         super().__init__(app)
@@ -1912,39 +2029,33 @@ class SettingsScreen(Screen):
             row.addLayout(col, 1)
             return row
 
-        c.addWidget(SectionTitle("Biblioteca e backup"))
+        c.addWidget(SectionTitle("Backup e sincronização"))
         card = TileCard()
         if cloud:
-            card.lay.addLayout(status_row("check", "green", f"Backup no {cloud}",
+            info = backup.cloud_app(cloud) or {}
+            card.lay.addLayout(status_row("check", "green", f"Backup e sincronização no {cloud}",
                                           f"Os PDFs ficam numa pasta do {cloud}: tudo o que você salva aqui vai para a "
-                                          "nuvem e aparece nos outros computadores e no celular."))
+                                          "nuvem e aparece nos outros aparelhos com o Prumo usando a mesma pasta. "
+                                          + info.get("iphone", "")))
         else:
             card.lay.addLayout(status_row("warning", "orange", "Só neste computador",
-                                          "Se o computador estragar ou for perdido, os PDFs vão junto. Leve a biblioteca "
-                                          "para uma nuvem (abaixo) ou faça cópias de segurança de vez em quando."))
+                                          "Sem backup e sem sincronização: se o computador estragar ou for perdido, "
+                                          "os PDFs vão junto. Escolha uma nuvem para guardar e sincronizar os PDFs."))
         path = Label(str(lib.root), 13, 400, "secondary")
         path.setTextInteractionFlags(Qt.TextSelectableByMouse)
         card.lay.addWidget(path)
-        if clouds and not cloud:
-            card.lay.addWidget(Label("Nuvens encontradas neste computador:", 13, 600))
-            row = QHBoxLayout()
-            for name, folder in clouds:
-                row.addWidget(small_button(f"Levar para o {name}",
-                                           lambda _c=False, f=folder: app.change_library_to(f / "Prumo PDF")))
-            row.addStretch(1)
-            card.lay.addLayout(row)
-        elif not clouds and not cloud:
-            card.lay.addWidget(Label("Nenhuma nuvem encontrada. Instale o OneDrive, o Google Drive para computador, o "
-                                     "iCloud para Windows ou o Dropbox e volte aqui.", 13, 400, "secondary"))
+        choose = PrimaryButton("Trocar de nuvem…" if cloud else "Escolher nuvem…", "blue")
+        choose.clicked.connect(lambda: cloud_dialog(app))
+        card.lay.addWidget(choose)
         row = QHBoxLayout()
         row.addWidget(small_button("Abrir no Explorador", lambda: app.reveal(lib.root)))
-        row.addWidget(small_button("Mudar pasta…", app.change_library))
+        row.addWidget(small_button("Usar outra pasta…", app.change_library))
         row.addStretch(1)
         card.lay.addLayout(row)
         card.lay.addWidget(Label(
             "Os PDFs ficam como arquivos comuns nessa pasta: dá para abrir, copiar e editar com qualquer programa. "
-            "Os favoritos e a ligação com as cópias de OCR vão junto, na subpasta oculta “.prumo”.",
-            13, 400, "secondary"))
+            "Os favoritos e a ligação com as cópias de OCR vão junto, na subpasta oculta “.prumo”, e também "
+            "sincronizam com os outros aparelhos.", 13, 400, "secondary"))
         c.addWidget(card)
 
         c.addWidget(SectionTitle("Cópia de segurança"))
@@ -2062,6 +2173,7 @@ class SettingsScreen(Screen):
             row.addWidget(Label(text, 14), 1)
             card.lay.addLayout(row)
         import core
+        card.lay.addWidget(Label("Desenvolvido por Color Software", 14, 600))
         card.lay.addWidget(Label(f"Prumo PDF {core.APP_VERSION}", 12, 400, "secondary"))
         c.addWidget(card)
         self.finish_content()

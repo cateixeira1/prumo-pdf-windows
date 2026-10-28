@@ -5,7 +5,7 @@ botões redondos, grade adaptável, alertas, folhas de opções, avisos e banner
 
 from __future__ import annotations
 
-from PySide6.QtCore import (QEasingCurve, QEvent, QEventLoop, QPoint, QPointF, QPropertyAnimation,
+from PySide6.QtCore import (QEasingCurve, QEvent, QEventLoop, QObject, QPoint, QPointF, QPropertyAnimation,
                             QRect, QRectF, QSize, Qt, QTimer, Signal)
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QAbstractButton, QFrame, QGraphicsDropShadowEffect, QHBoxLayout,
@@ -1156,6 +1156,10 @@ class LockOverlay(QWidget):
         for w in (logo, title, self.field, self.error, button, forgot):
             lay.addWidget(w)
         self.box = box
+        self.credit = QLabel("Color Software", self)
+        self.credit.setFont(font(12, 600))
+        self.credit.setAlignment(Qt.AlignCenter)
+        self.credit.setStyleSheet(f"color: {T.hex('secondary')}; background: transparent;")
         window.installEventFilter(self)
         self._place()
 
@@ -1168,6 +1172,7 @@ class LockOverlay(QWidget):
     def _place(self):
         self.box.adjustSize()
         self.box.move((self.width() - self.box.width()) // 2, (self.height() - self.box.height()) // 2)
+        self.credit.setGeometry(0, self.height() - 44, self.width(), 24)
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -1366,6 +1371,37 @@ class JobBanner(QFrame):
         self.setFixedWidth(width)
         self.adjustSize()
         self.move((w.width() - width) // 2, w.height() - self.height() - 18)
+
+
+class WheelGuard(QObject):
+    """
+    A roda do mouse rola a tela e não muda caixas de seleção ou números por onde o cursor passa
+    (no Qt, girar a roda sobre uma caixa troca o item escolhido). A caixa só responde à roda
+    depois de clicada.
+    """
+
+    def eventFilter(self, obj, ev):
+        from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSpinBox, QApplication, QComboBox
+        if ev.type() == QEvent.Wheel and isinstance(obj, (QComboBox, QAbstractSpinBox)):
+            if obj.focusPolicy() == Qt.WheelFocus:
+                obj.setFocusPolicy(Qt.StrongFocus)
+            if not obj.hasFocus():
+                area = obj.parentWidget()
+                while area is not None and not isinstance(area, QAbstractScrollArea):
+                    area = area.parentWidget()
+                if area is not None:
+                    QApplication.sendEvent(area.verticalScrollBar(), ev)
+                return True
+        return False
+
+
+def install_wheel_guard(app) -> "WheelGuard":
+    guard = getattr(app, "_prumo_wheel_guard", None)
+    if guard is None:
+        guard = WheelGuard(app)
+        app.installEventFilter(guard)
+        app._prumo_wheel_guard = guard
+    return guard
 
 
 def styled_menu(parent: QWidget) -> QMenu:

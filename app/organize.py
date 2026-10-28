@@ -476,7 +476,7 @@ class OrganizeScreen(Screen):
         self.set_title("Organizar páginas")
         self.big_title.hide()
         self.save_btn = TextButton("Salvar", bold=True)
-        self.save_btn.clicked.connect(self.save)
+        self.save_btn.clicked.connect(lambda _checked=False: self.save())
         self.nav.right.addWidget(self.save_btn)
         hint = Label(f"“{self.item.name}”. Arraste as páginas para mudar a ordem; perto do alto ou do pé da "
                      "janela, a lista rola sozinha. Ctrl+clique seleciona várias, Shift+clique um trecho. "

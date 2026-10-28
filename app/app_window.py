@@ -26,6 +26,8 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(app_icon())
         self.setMinimumSize(420, 600)
         self.setAcceptDrops(True)
+        from ios_kit import install_wheel_guard
+        install_wheel_guard(QApplication.instance())   # a roda do mouse não troca caixas de seleção
         if library is None:
             library = Library(self.setting("library_root", "") or str(default_root()))
         self.hub = LibraryHub(library)
@@ -50,6 +52,11 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+F"), self, self._focus_search)
         QShortcut(QKeySequence("Ctrl+O"), self, lambda: self.import_dialog(self._drop_folder()))
         QShortcut(QKeySequence("F5"), self, lambda: self.lib.reload())
+        # Biblioteca na nuvem: o que outro aparelho muda aparece aqui sozinho, sem precisar reabrir.
+        self._sync_timer = QTimer(self)
+        self._sync_timer.setInterval(20_000)
+        self._sync_timer.timeout.connect(self._sync_tick)
+        self._sync_timer.start()
         self.push(HomeScreen(self))
         self._setup_lock()
         geo = self.settings.value("geometry")
@@ -559,12 +566,43 @@ class MainWindow(QMainWindow):
         if self.jobs.is_busy():
             self.show_error("Espere o OCR terminar antes de mudar a pasta da biblioteca.")
             return
-        idx = alert(self, "Mudar a pasta da biblioteca",
-                    f"Nova pasta: {new_root}\n\nMover os PDFs atuais para lá? Se escolher “Não mover”, "
-                    "os PDFs continuam na pasta antiga e a biblioteca passa a mostrar a nova.",
-                    [("Mover os PDFs", "default"), ("Não mover", "cancel"), ("Cancelar", "cancel")])
-        if idx is None or idx == 2:
-            return
+        import backup
+        joining = new_root.is_dir() and any(p for p in new_root.rglob("*.pdf") if backup.META_DIR not in p.parts)
+        if joining:
+            idx = alert(self, "Juntar com a biblioteca da nuvem",
+                        f"{new_root}\n\nEssa pasta já tem PDFs (por exemplo, do Prumo no iPhone ou em outro "
+                        "computador). Juntar: os PDFs deste computador vão para lá, nas mesmas pastas, sem duplicar "
+                        "os iguais, e a pasta antiga fica vazia. Se escolher “Não juntar”, os PDFs deste "
+                        "computador continuam na pasta antiga.",
+                        [("Juntar", "default"), ("Não juntar", "cancel"), ("Cancelar", "cancel")])
+            if idx is None or idx == 2:
+                return
+            if idx == 0:
+                self.set_setting("library_root", str(new_root))
+                self._swap_library(str(new_root))
+                try:
+                    added, same = self.run_with_progress("Juntando os PDFs…",
+                                                         lambda _p: backup.merge_move(old, self.lib))
+                except UserError as exc:
+                    self.show_error(str(exc))
+                    return
+                except OSError as exc:
+                    self.show_error(f"Não foi possível juntar: {exc.strerror or exc}. Os arquivos que faltaram "
+                                    f"continuam em {old}.")
+                    return
+                self.lib.reload()
+                cloud = backup.cloud_of(new_root)
+                self.toast(f"Pronto: {added} PDF{'s' if added != 1 else ''} juntado{'s' if added != 1 else ''}"
+                           + (f" ({same} já estava{'m' if same != 1 else ''} lá)" if same else "")
+                           + (f". A biblioteca agora está no {cloud}." if cloud else "."))
+                return
+        else:
+            idx = alert(self, "Mudar a pasta da biblioteca",
+                        f"Nova pasta: {new_root}\n\nMover os PDFs atuais para lá? Se escolher “Não mover”, "
+                        "os PDFs continuam na pasta antiga e a biblioteca passa a mostrar a nova.",
+                        [("Mover os PDFs", "default"), ("Não mover", "cancel"), ("Cancelar", "cancel")])
+            if idx is None or idx == 2:
+                return
 
         def run():
             new_root.mkdir(parents=True, exist_ok=True)
@@ -764,6 +802,16 @@ class MainWindow(QMainWindow):
         self._place_bottom()
         if getattr(self, "lock", None) is not None and self.lock.isVisible():
             self.lock.raise_()
+
+    def _sync_tick(self):
+        from ios_kit import BusyOverlay, _Overlay
+        busy = any(o.isVisible() for o in self.findChildren(_Overlay)) or \
+            any(o.isVisible() for o in self.findChildren(BusyOverlay))
+        if self.isVisible() and not self.isMinimized() and not busy:
+            try:
+                self.lib.reload_if_changed()
+            except OSError:
+                pass
 
     def changeEvent(self, e):
         from PySide6.QtCore import QEvent

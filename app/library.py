@@ -29,6 +29,10 @@ from pdfops import UserError
 
 META_DIR = ".prumo"
 RECENT_DAYS = 7
+# Campos que acompanham a biblioteca entre aparelhos (Windows e iPhone) pelo .prumo/library.json.
+# As referências (cópia com OCR, original) vão como id no arquivo e são conferidas pelo caminho.
+SHARED_FIELDS = ("favorite", "pending_ocr", "is_ocr_result", "ocr_copy_id", "source_id")
+REF_FIELDS = ("ocr_copy_id", "source_id")
 
 
 # --- Modelo -------------------------------------------------------------------
@@ -211,6 +215,12 @@ class Library:
         self._metas: dict[str, DocMeta] = {}
         self._texts: dict[str, str] = {}
         self._listeners = []
+        # Sincronização com outros aparelhos pelo arquivo compartilhado (ver _sync_disk).
+        self._disk_stamp = None                       # (mtime_ns, tamanho) do library.json lido ou gravado
+        self._disk_entries: dict[str, dict] = {}      # caminho em minúsculas -> entrada do arquivo
+        self._snap: dict[str, dict] = {}              # valores compartilhados na última sincronização
+        self._known: set[str] = set()                 # caminhos que já existiram neste aparelho
+        self._tree = None
         self._load_meta()
         self.reload()
 
@@ -224,6 +234,7 @@ class Library:
 
     # --- leitura ---
     def reload(self) -> None:
+        self._sync_disk()
         files, dirs = [], []
         for dirpath, dirnames, filenames in os.walk(self.root):
             dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != META_DIR)
@@ -246,8 +257,9 @@ class Library:
         by_path = {m.path.lower(): m for m in self._metas.values()}
         new_metas: dict[str, DocMeta] = {}
         items = []
+        used_ids = {m.id for m in self._metas.values()}
         for full, rel, size, mtime in files:
-            meta = by_path.get(rel.lower()) or DocMeta(path=rel)
+            meta = by_path.get(rel.lower()) or self._new_meta(rel, used_ids)
             meta.path = rel
             new_metas[meta.id] = meta
             items.append(PDFItem(meta, full, size, mtime))
@@ -269,9 +281,32 @@ class Library:
                 doc_count=sum(1 for i in items if i.folder == d),
                 total_doc_count=sum(1 for i in items if i.rel.startswith(prefix)),
                 subfolder_count=sum(1 for x in dirs if x.rsplit("/", 1)[0] == d and "/" in x)))
+        self._known |= {m.path.lower() for m in new_metas.values()}
+        self._tree = self._scan_tree()
         if changed:
             self.save_meta()
         self._changed()
+
+    def reload_if_changed(self) -> bool:
+        """Para a sincronização: só recarrega se algo mudou na pasta (ou no library.json)."""
+        if self._scan_tree() == self._tree and self._stamp() == self._disk_stamp:
+            return False
+        self.reload()
+        return True
+
+    def _scan_tree(self) -> str:
+        h = hashlib.sha1()
+        for dirpath, dirnames, filenames in os.walk(self.root):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            h.update(dirpath.encode("utf-8", "surrogatepass"))
+            for f in sorted(filenames):
+                if f.lower().endswith(".pdf") and not f.startswith("."):
+                    try:
+                        st = os.stat(os.path.join(dirpath, f))
+                    except OSError:
+                        continue
+                    h.update(f"{f}|{st.st_size}|{st.st_mtime_ns}".encode("utf-8", "surrogatepass"))
+        return h.hexdigest()
 
     def item(self, id: str) -> PDFItem | None:
         return next((i for i in self.items if i.id == id), None)
@@ -394,25 +429,132 @@ class Library:
         self._changed()
 
     # --- metadados ---
-    def _load_meta(self) -> None:
+    # O .prumo/library.json fica dentro da biblioteca. Quando a biblioteca está numa nuvem, o mesmo
+    # arquivo é lido e gravado pelo Prumo de outros aparelhos (outro computador, o iPhone). Para não
+    # perder o que o outro aparelho mudou, antes de gravar o arquivo é relido e os campos
+    # compartilhados que não mudaram aqui desde a última leitura são trazidos de lá.
+    def _stamp(self):
+        try:
+            st = self.meta_file.stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def _read_disk(self) -> list[dict]:
         try:
             data = json.loads(self.meta_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return
-        for d in data if isinstance(data, list) else []:
+            return []
+        return [d for d in data if isinstance(d, dict) and d.get("path") and d.get("id")] \
+            if isinstance(data, list) else []
+
+    def _load_meta(self) -> None:
+        self._disk_stamp = self._stamp()
+        entries = self._read_disk()
+        for d in entries:
             m = DocMeta.from_dict(d)
             if m:
                 self._metas.setdefault(m.id, m)
+        self._set_disk(entries)
+        self._snap = self._shared_values()
+
+    def _set_disk(self, entries: list[dict]) -> None:
+        self._disk_entries = {}
+        for d in entries:
+            self._disk_entries.setdefault(str(d["path"]).replace("\\", "/").lower(), d)
+
+    def _shared_values(self) -> dict[str, dict]:
+        """Valores compartilhados de cada arquivo deste aparelho, com as referências como caminho."""
+        id_path = {m.id: m.path.lower() for m in self._metas.values()}
+        out = {}
+        for m in self._metas.values():
+            vals = {f: getattr(m, f) for f in SHARED_FIELDS}
+            for f in REF_FIELDS:
+                if vals[f]:
+                    vals[f] = id_path.get(vals[f], "id:" + vals[f])
+            out[m.path.lower()] = vals
+        return out
+
+    def _disk_values(self, entry: dict, disk_id_path: dict[str, str]) -> dict:
+        vals = {}
+        for f in SHARED_FIELDS:
+            v = entry.get(f)
+            if f in REF_FIELDS:
+                vals[f] = (disk_id_path.get(v, "id:" + str(v))) if v else None
+            else:
+                vals[f] = bool(v)
+        return vals
+
+    def _resolve_ref(self, value, by_path: dict[str, DocMeta]):
+        if not value:
+            return None
+        if value.startswith("id:"):
+            return value[3:]
+        m = by_path.get(value)
+        if m:
+            return m.id
+        entry = self._disk_entries.get(value)
+        return entry.get("id") if entry else None
+
+    def _sync_disk(self) -> None:
+        """Traz do library.json o que outro aparelho mudou (só quando o arquivo mudou)."""
+        stamp = self._stamp()
+        if stamp == self._disk_stamp:
+            return
+        self._disk_stamp = stamp
+        entries = self._read_disk()
+        self._set_disk(entries)
+        if not entries:
+            return
+        disk_id_path = {d["id"]: str(d["path"]).replace("\\", "/").lower() for d in entries}
+        local = self._shared_values()
+        by_path = {m.path.lower(): m for m in self._metas.values()}
+        for p, entry in self._disk_entries.items():
+            m = by_path.get(p)
+            if m is None:
+                continue
+            disk = self._disk_values(entry, disk_id_path)
+            snap = self._snap.get(p)
+            for f in SHARED_FIELDS:
+                if snap is not None and local[p][f] != snap[f]:
+                    continue            # mudou aqui depois da última sincronização: vale o daqui
+                if disk[f] != local[p][f]:
+                    setattr(m, f, self._resolve_ref(disk[f], by_path) if f in REF_FIELDS else disk[f])
+        self._snap = self._shared_values()
+
+    def _new_meta(self, rel: str, used_ids: set[str]) -> DocMeta:
+        """Arquivo novo na pasta. Se ele veio de outro aparelho, usa o id e os favoritos de lá."""
+        entry = self._disk_entries.get(rel.lower())
+        if not entry:
+            return DocMeta(path=rel)
+        kwargs = {f: entry.get(f) for f in SHARED_FIELDS if entry.get(f) is not None}
+        mid = entry.get("id")
+        if mid and mid not in used_ids:
+            kwargs["id"] = mid
+            used_ids.add(mid)
+        try:
+            return DocMeta(path=rel, **kwargs)
+        except TypeError:
+            return DocMeta(path=rel)
 
     def save_meta(self) -> None:
-        data = json.dumps([asdict(m) for m in sorted(self._metas.values(), key=lambda m: m.path)],
-                          ensure_ascii=False, indent=1)
+        self._sync_disk()
+        local = {m.path.lower() for m in self._metas.values()}
+        rows = [asdict(m) for m in sorted(self._metas.values(), key=lambda m: m.path)]
+        # Arquivos que outro aparelho registrou e que ainda não chegaram aqui pela nuvem: ficam no arquivo.
+        rows += [e for p, e in self._disk_entries.items() if p not in local and p not in self._known]
+        data = json.dumps(rows, ensure_ascii=False, indent=1)
         tmp = self.meta_file.with_name("library.json.part")
         try:
+            self.meta_dir.mkdir(parents=True, exist_ok=True)
             tmp.write_text(data, encoding="utf-8")
             os.replace(tmp, self.meta_file)
         except OSError:
-            pass
+            return
+        self._disk_stamp = self._stamp()
+        self._set_disk(rows)
+        self._known |= local
+        self._snap = self._shared_values()
 
     def update(self, id: str, **changes) -> None:
         meta = self._metas.get(id)
