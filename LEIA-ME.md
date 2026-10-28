@@ -55,6 +55,14 @@ Depois disso, o programa funciona sem internet.
 - Fotos de celular: boa iluminação, sem sombra, enquadrando só a folha.
 - Texto manuscrito, carimbos sobrepostos e tabelas complexas tendem a ter mais erros.
 
+### Backup e sincronização com o iPhone
+
+Em **Ajustes › Escolher nuvem**, escolha onde guardar os PDFs. O Prumo usa uma pasta "Prumo PDF" dentro da nuvem; o mesmo vale no iPhone (Ajustes › Escolher nuvem).
+
+- **iCloud Drive** (recomendado para quem usa iPhone): instale o iCloud para Windows (Microsoft Store), entre com a conta Apple e ligue o iCloud Drive. No iPhone, escolha o iCloud Drive no Prumo.
+- **Google Drive, OneDrive, Dropbox**: funcionam como backup e para sincronizar entre computadores. No iPhone, o Google Drive e o OneDrive não deixam outros apps usarem pastas deles; o Dropbox depende do app dele.
+- Favoritos e a ligação com as cópias de OCR vão junto (arquivo oculto `.prumo\library.json`). Se os dois aparelhos mudarem ao mesmo tempo, o Prumo junta as mudanças.
+
 ### Esqueci a senha do Prumo
 
 Por segurança, não há como ver a senha. Para desfazer a trava, feche o Prumo, abra o **Prompt de Comando** (menu Iniciar › digite “cmd”) e rode:
