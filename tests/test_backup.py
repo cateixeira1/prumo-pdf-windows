@@ -156,8 +156,15 @@ class ExternalOpenTests(unittest.TestCase):
             server = main.start_instance_server(w, delay_ms=50)
             self.assertTrue(server.isListening())
             other = digital_pdf(tmp / "Downloads" / "Acórdão.pdf", 2)
-            self.assertTrue(main._send_to_running({"open": [str(other)], "convert": []}))
+            import threading
+            sent = []
+            t = threading.Thread(target=lambda: sent.append(main._send_to_running({"open": [str(other)], "convert": []})))
+            t.start()
             end = time.time() + 5
+            while t.is_alive() and time.time() < end:
+                pump(30)
+            self.assertEqual(sent, [True])
+            end = time.time() + 8
             while time.time() < end and len(w.lib.items) < 2:
                 pump(50)
             self.assertEqual(sorted(i.name for i in w.lib.items), ["Acórdão", "Sentença"])

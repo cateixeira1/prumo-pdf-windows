@@ -212,7 +212,7 @@ def _send_to_running(message: dict) -> bool:
     sock.connectToServer(_server_name())
     if not sock.waitForConnected(400):
         return False
-    sock.write(json.dumps(message).encode("utf-8"))
+    sock.write(json.dumps(message).encode("utf-8") + b"\n")   # a quebra de linha marca o fim da mensagem
     sock.flush()
     sock.waitForBytesWritten(2000)
     sock.disconnectFromServer()
@@ -250,24 +250,35 @@ def start_instance_server(window, delay_ms: int = 700):
     timer.timeout.connect(flush)
 
     def on_connection():
-        conn = server.nextPendingConnection()
-        buf = bytearray()
+        from PySide6.QtNetwork import QLocalSocket
+        while server.hasPendingConnections():
+            conn = server.nextPendingConnection()
+            state = {"buf": bytearray(), "done": False}
 
-        def read():
-            buf.extend(bytes(conn.readAll()))
+            def finish(conn=conn, state=state):
+                if state["done"]:
+                    return
+                state["done"] = True
+                try:
+                    msg = json.loads(bytes(state["buf"]).decode("utf-8").strip() or "{}")
+                except ValueError:
+                    msg = {}
+                pending["open"].extend(msg.get("open", []))
+                pending["convert"].extend(msg.get("convert", []))
+                timer.start()
+                conn.deleteLater()
 
-        def done():
+            def read(conn=conn, state=state):
+                state["buf"].extend(bytes(conn.readAll()))
+                if state["buf"].endswith(b"\n"):
+                    finish()
+
+            conn.readyRead.connect(read)
+            conn.disconnected.connect(lambda read=read, finish=finish: (read(), finish()))
+            # No Windows a mensagem pode ter chegado (e a conexão fechado) antes destes avisos existirem.
             read()
-            try:
-                msg = json.loads(buf.decode("utf-8") or "{}")
-            except ValueError:
-                msg = {}
-            pending["open"].extend(msg.get("open", []))
-            pending["convert"].extend(msg.get("convert", []))
-            timer.start()
-            conn.deleteLater()
-        conn.readyRead.connect(read)
-        conn.disconnected.connect(done)
+            if conn.state() == QLocalSocket.UnconnectedState:
+                finish()
     server.newConnection.connect(on_connection)
     return server
 
