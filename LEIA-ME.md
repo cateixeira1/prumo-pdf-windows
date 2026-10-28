@@ -31,7 +31,7 @@ O instalador é gerado automaticamente no GitHub a cada mudança (Windows de ver
 
 Depois disso, o programa funciona sem internet.
 
-## 3. Usar
+## 2. Usar
 
 - **Importar:** cartão **Importar**, Ctrl+O, ou arraste PDFs (ou uma pasta) para a janela. Dentro de uma pasta, os PDFs arrastados entram nela.
 - **Abrir um PDF:** clique no cartão. Os três pontos ⋮ no canto inferior direito (ou o botão direito do mouse) mostram o menu rápido; a estrela favorita.
@@ -47,7 +47,7 @@ Depois disso, o programa funciona sem internet.
 - Fotos de celular: boa iluminação, sem sombra, enquadrando só a folha.
 - Texto manuscrito, carimbos sobrepostos e tabelas complexas tendem a ter mais erros.
 
-## 4. Para quem for mexer no código
+## 3. Para quem for mexer no código
 
 ```
 app/            código do aplicativo (Python + PySide6)
@@ -71,7 +71,7 @@ Rodar sem instalar (com o ambiente `.venv` já criado pelo build): `.venv\Script
 
 Os critérios de classificação de página (quantidade mínima de texto, cobertura por imagem) ficam no início de `app/core.py`.
 
-## 5. Componentes e licenças (todos gratuitos)
+## 4. Componentes e licenças (todos gratuitos)
 
 | Componente | Uso | Licença |
 |---|---|---|
