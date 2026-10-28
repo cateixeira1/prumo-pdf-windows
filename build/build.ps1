@@ -9,6 +9,8 @@
 #   5. baixa o instalador oficial do Tesseract (UB Mannheim);
 #   6. instala o Inno Setup, se preciso, e gera o instalador final em dist\.
 
+param([switch]$CI)   # -CI: compilação na nuvem (GitHub Actions), sem abrir o Explorador no fim
+
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"   # downloads bem mais rápidos no PowerShell 5
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -89,8 +91,9 @@ Step "Baixando o instalador oficial do Tesseract (UB Mannheim)"
 New-Item -ItemType Directory -Force -Path "build\redist" | Out-Null
 $tessSetup = "build\redist\tesseract-setup.exe"
 if (-not (Test-Path $tessSetup)) {
-    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest" `
-                             -Headers @{ "User-Agent" = "PrumoPDF-build" }
+    $headers = @{ "User-Agent" = "PrumoPDF-build" }
+    if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
+    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest" -Headers $headers
     $asset = $rel.assets | Where-Object { $_.name -match "w64-setup.*\.exe$" } | Select-Object -First 1
     if (-not $asset) { Fail "Não encontrei o instalador do Tesseract na página de versões da UB Mannheim." }
     Write-Host "  $($asset.name)"
@@ -114,16 +117,17 @@ function Find-ISCC {
 $iscc = Find-ISCC
 if (-not $iscc) {
     Write-Host "Instalando o Inno Setup 7 pelo winget..."
-    winget install --id JRSoftware.InnoSetup.7 -e -s winget --silent --accept-package-agreements --accept-source-agreements
-    $iscc = Find-ISCC
+    if ($CI) { choco install innosetup -y --no-progress | Out-Null; $iscc = Find-ISCC }
+    if (-not $iscc) { winget install --id JRSoftware.InnoSetup.7 -e -s winget --silent --accept-package-agreements --accept-source-agreements
+    $iscc = Find-ISCC }
     if (-not $iscc) { Fail "Instale o Inno Setup (jrsoftware.org/isdl.php) e rode este script de novo." }
 }
 & $iscc "build\PrumoPDF.iss"
 if ($LASTEXITCODE -ne 0) { Fail "Falha ao gerar o instalador." }
 
-$out = Get-ChildItem "dist\Instalador_PrumoPDF_*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$out = Get-ChildItem "dist\PrumoPDF_Setup_*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 Write-Host ""
 Write-Host "PRONTO! Instalador gerado:" -ForegroundColor Green
 Write-Host "  $($out.FullName)" -ForegroundColor Green
 Write-Host "Dê dois cliques nele para instalar o Prumo PDF."
-explorer.exe "/select,`"$($out.FullName)`""
+if (-not $CI) { explorer.exe "/select,`"$($out.FullName)`"" }

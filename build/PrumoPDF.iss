@@ -2,7 +2,7 @@
 ; Gerado pelo build.ps1. Instala o aplicativo e, se ainda não houver, o Tesseract (UB Mannheim).
 
 #define AppName "Prumo PDF"
-#define AppVersion "1.2.0"
+#define AppVersion "1.2.1"
 #define AppExe "PrumoPDF.exe"
 
 [Setup]
@@ -15,7 +15,7 @@ DefaultDirName={autopf}\Prumo PDF
 DefaultGroupName=Prumo PDF
 DisableProgramGroupPage=yes
 OutputDir=..\dist
-OutputBaseFilename=Instalador_PrumoPDF_{#AppVersion}
+OutputBaseFilename=PrumoPDF_Setup_{#AppVersion}
 SetupIconFile=..\assets\PrumoPDF.ico
 UninstallDisplayIcon={app}\{#AppExe}
 UninstallDisplayName={#AppName}
@@ -38,8 +38,10 @@ Source: "..\dist\PrumoPDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubd
 Source: "redist\tesseract-setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: not TesseractInstalled
 
 [Icons]
-Name: "{autoprograms}\Prumo PDF"; Filename: "{app}\{#AppExe}"
-Name: "{autodesktop}\Prumo PDF"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+; O AppUserModelID é o mesmo que o app declara ao abrir (main.py). Assim o Windows liga a janela
+; aberta ao atalho e mostra o logo do Prumo na barra de tarefas (e não um ícone genérico).
+Name: "{autoprograms}\Prumo PDF"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "Prumo.PrumoPDF"
+Name: "{autodesktop}\Prumo PDF"; Filename: "{app}\{#AppExe}"; IconFilename: "{app}\{#AppExe}"; AppUserModelID: "Prumo.PrumoPDF"; Tasks: desktopicon
 
 [Run]
 Filename: "{tmp}\tesseract-setup.exe"; Parameters: "/S"; \

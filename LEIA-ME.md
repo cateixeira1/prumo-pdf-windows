@@ -19,29 +19,22 @@ Próximas etapas: transformar outros arquivos em PDF, modo leitor e busca no tex
 
 ---
 
-## 1. Gerar o instalador (uma vez só)
+## 1. Instalar
 
-1. Descompacte esta pasta em um lugar fixo, por exemplo `C:\PrumoPDF`.
-2. Dê dois cliques em **GERAR_INSTALADOR.bat**.
-3. Aguarde. Na primeira vez leva cerca de 10 a 20 minutos, porque o script baixa o Python, as bibliotecas, os modelos de idioma e o Tesseract. É preciso estar conectado à internet nessa etapa.
-4. Ao final, a pasta `dist` abre com o arquivo **Instalador_PrumoPDF_1.2.0.exe** selecionado.
-
-Você **não** precisa instalar o Python antes: o script usa o `uv`, que baixa um Python próprio só para esta pasta, sem mexer no resto do computador.
-
-Se o Windows pedir permissão para instalar o Inno Setup (programa que monta o instalador), aceite.
-
-## 2. Instalar
-
-1. Dê dois cliques em **Instalador_PrumoPDF_1.2.0.exe**.
-2. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
+1. Baixe o **PrumoPDF_Setup_1.2.1.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
+
+Para atualizar, rode o instalador da versão nova por cima: os PDFs e os ajustes continuam onde estão.
+
+O instalador é gerado automaticamente no GitHub a cada mudança (Windows de verdade, com os testes automáticos rodando antes). Se um dia precisar gerar no próprio computador, o **GERAR_INSTALADOR.bat** continua funcionando.
 
 Depois disso, o programa funciona sem internet.
 
 ## 3. Usar
 
 - **Importar:** cartão **Importar**, Ctrl+O, ou arraste PDFs (ou uma pasta) para a janela. Dentro de uma pasta, os PDFs arrastados entram nela.
-- **Abrir um PDF:** clique no cartão. O botão direito mostra o menu rápido (ler, compartilhar, OCR, favoritar, renomear, mover, excluir).
+- **Abrir um PDF:** clique no cartão. Os três pontos ⋮ no canto inferior direito (ou o botão direito do mouse) mostram o menu rápido; a estrela favorita.
 - **Voltar:** botão redondo com a seta, Alt+←, Backspace ou o botão "voltar" do mouse.
 - **Excluir** manda o arquivo para a Lixeira do Windows.
 - **OCR:** na tela do PDF, cartão **OCR**. O andamento aparece no pé da janela; dá para continuar usando o programa.

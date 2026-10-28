@@ -8,7 +8,8 @@ from PyInstaller.utils.hooks import collect_data_files
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 APP = os.path.join(ROOT, "app")
 
-datas = [(os.path.join(ROOT, "tessdata"), "tessdata")]
+datas = [(os.path.join(ROOT, "tessdata"), "tessdata"),
+         (os.path.join(ROOT, "assets", "PrumoPDF.ico"), "assets")]   # ícone da janela e da barra de tarefas
 if os.path.isdir(os.path.join(ROOT, "tessdata_best")):
     datas.append((os.path.join(ROOT, "tessdata_best"), "tessdata_best"))
 datas += collect_data_files("fpdf")          # fontes e dados usados pelo OCRmyPDF ao montar o texto

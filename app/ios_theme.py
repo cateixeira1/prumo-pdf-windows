@@ -274,8 +274,33 @@ def paint_tile_icon(p: QPainter, rect: QRectF, name: str, color: QColor, rounded
     p.restore()
 
 
+def _icon_file():
+    """O PrumoPDF.ico (16 a 256 px), dentro do pacote instalado ou na pasta assets do código."""
+    import sys
+    from pathlib import Path
+
+    bases = []
+    if getattr(sys, "_MEIPASS", None):
+        bases.append(Path(sys._MEIPASS))
+    bases.append(Path(__file__).resolve().parent.parent)
+    for b in bases:
+        f = b / "assets" / "PrumoPDF.ico"
+        if f.exists():
+            return f
+    return None
+
+
 def app_icon() -> QIcon:
-    """Ícone do aplicativo: prumo branco sobre quadrado verde-petróleo (igual ao do iPhone)."""
+    """
+    Ícone do aplicativo: prumo branco sobre quadrado verde-petróleo (igual ao do iPhone).
+    Usa o .ico com todos os tamanhos, para a barra de tarefas (16 a 32 px) mostrar o
+    desenho nítido; se o arquivo faltar, desenha o mesmo ícone na hora.
+    """
+    f = _icon_file()
+    if f is not None:
+        ic = QIcon(str(f))
+        if not ic.isNull() and ic.availableSizes():
+            return ic
     pm = QPixmap(256, 256)
     pm.fill(Qt.transparent)
     p = QPainter(pm)

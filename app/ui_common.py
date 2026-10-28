@@ -138,7 +138,16 @@ def icon(name: str, color: str = C["text"], size: int = 20) -> QIcon:
 
 
 def app_icon() -> QIcon:
-    """Ícone do aplicativo: prumo branco sobre quadrado verde-petróleo."""
+    """Ícone do aplicativo: prumo branco sobre quadrado verde-petróleo (o mesmo .ico da tela nova)."""
+    try:
+        from ios_theme import _icon_file
+        f = _icon_file()
+        if f is not None:
+            ic = QIcon(str(f))
+            if not ic.isNull() and ic.availableSizes():
+                return ic
+    except Exception:
+        pass
     pm = QPixmap(256, 256)
     pm.fill(Qt.transparent)
     p = QPainter(pm)
