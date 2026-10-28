@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+dist/
+build/work/
+tessdata/
+tessdata_best/
+.venv/

@@ -1,0 +1,8 @@
+# Versões testadas na montagem do Prumo PDF (outubro de 2026).
+ocrmypdf>=17.13,<18
+PySide6-Essentials>=6.12,<7
+pypdf>=5.9,<7
+pypdfium2>=5.13,<6
+pikepdf>=10.15
+pillow>=11
+pyinstaller>=6.22,<7
