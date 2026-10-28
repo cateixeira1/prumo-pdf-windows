@@ -70,12 +70,12 @@ def find_all(text: str, query: str) -> list[tuple[int, int]]:
 
 # --- Texto das páginas e parágrafos ----------------------------------------------
 
-def page_texts(path) -> list[str]:
+def page_texts(path, password: str | None = None) -> list[str]:
     import pypdfium2 as pdfium
 
     out = []
     with core.PDFIUM_LOCK:
-        pdf = pdfium.PdfDocument(str(path))
+        pdf = pdfium.PdfDocument(str(path), password=password)
         try:
             for i in range(len(pdf)):
                 page = pdf[i]
@@ -137,8 +137,8 @@ class ReaderPage:
     paragraphs: list[str]
 
 
-def reader_pages(path) -> list[ReaderPage]:
-    return [ReaderPage(i + 1, reflow(t)) for i, t in enumerate(page_texts(path))]
+def reader_pages(path, password: str | None = None) -> list[ReaderPage]:
+    return [ReaderPage(i + 1, reflow(t)) for i, t in enumerate(page_texts(path, password))]
 
 
 # --- Busca dentro do PDF (para destacar na página) ----------------------------------

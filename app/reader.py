@@ -30,11 +30,11 @@ MAX_W = 900            # largura da página com zoom 100%, se a janela couber
 ZOOMS = [0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]
 
 
-def page_sizes(path) -> list[tuple[float, float]]:
+def page_sizes(path, password: str | None = None) -> list[tuple[float, float]]:
     import pypdfium2 as pdfium
 
     with core.PDFIUM_LOCK:
-        pdf = pdfium.PdfDocument(str(path))
+        pdf = pdfium.PdfDocument(str(path), password=password)
         try:
             return [tuple(pdf.get_page_size(i)) for i in range(len(pdf))]
         finally:
@@ -46,13 +46,13 @@ class _Signals(QObject):
 
 
 class _Render(QRunnable):
-    def __init__(self, path, page, px, signals):
+    def __init__(self, path, page, px, signals, password=None):
         super().__init__()
-        self.path, self.page, self.px, self.signals = path, page, px, signals
+        self.path, self.page, self.px, self.signals, self.password = path, page, px, signals, password
 
     def run(self):
         from services import render_page
-        img = render_page(self.path, self.page, self.px)
+        img = render_page(self.path, self.page, self.px, self.password)
         self.signals.done.emit(self.page, self.px, img if img is not None else QImage())
 
 
@@ -61,9 +61,9 @@ class PageCache(QObject):
 
     ready = Signal(int)
 
-    def __init__(self, path, limit=14):
+    def __init__(self, path, limit=14, password=None):
         super().__init__()
-        self.path, self.limit = str(path), limit
+        self.path, self.limit, self.password = str(path), limit, password
         self.mem: OrderedDict[tuple[int, int], QImage] = OrderedDict()
         self.best: dict[int, QImage] = {}
         self.pending: set[tuple[int, int]] = set()
@@ -81,7 +81,7 @@ class PageCache(QObject):
             return img
         if key not in self.pending:
             self.pending.add(key)
-            self.pool.start(_Render(self.path, page, px, self.signals))
+            self.pool.start(_Render(self.path, page, px, self.signals, self.password))
         return self.best.get(page)   # enquanto isso, a melhor versão que já existe (ampliada)
 
     def _done(self, page, px, img):
@@ -104,11 +104,11 @@ class PageCache(QObject):
 class PagesView(QWidget):
     page_changed = Signal(int)
 
-    def __init__(self, screen, path):
+    def __init__(self, screen, path, password=None):
         super().__init__()
         self.screen = screen
-        self.sizes = page_sizes(path)
-        self.cache = PageCache(path)
+        self.sizes = page_sizes(path, password)
+        self.cache = PageCache(path, password=password)
         self.cache.ready.connect(lambda _p: self.update())
         self.zoom = 1.0
         self.hits: dict[int, list] = {}          # página → ocorrências da busca
@@ -372,10 +372,11 @@ class _ReaderBase(Screen):
     large_title = False
     mode = "page"
 
-    def __init__(self, app, item_id):
+    def __init__(self, app, item_id, password=None):
         super().__init__(app)
         self.item_id = item_id
         self.item = app.lib.item(item_id)
+        self.password = password
         self.add_back()
         self.big_title.hide()
         self.search_bar = SearchBar(self.run_search, self.step, self.close_search)
@@ -407,8 +408,9 @@ class _ReaderBase(Screen):
             return
         page = self.current_page_index()
         query = self.search_bar.text() if self.search_bar.isVisible() else ""
-        screen = (ReaderScreen(self.app, item_id, start_page=page) if mode == "page"
-                  else TextReaderScreen(self.app, item_id, start_page=page))
+        pw = self.password if item_id == self.item_id else None
+        screen = (ReaderScreen(self.app, item_id, start_page=page, password=pw) if mode == "page"
+                  else TextReaderScreen(self.app, item_id, start_page=page, password=pw))
         self.app.replace_top(screen)
         if query:
             screen.open_search()
@@ -440,8 +442,8 @@ class _ReaderBase(Screen):
 class ReaderScreen(_ReaderBase):
     mode = "page"
 
-    def __init__(self, app, item_id: str, start_page: int = 0, title_extra: str = ""):
-        super().__init__(app, item_id)
+    def __init__(self, app, item_id: str, start_page: int = 0, title_extra: str = "", password=None):
+        super().__init__(app, item_id, password)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         zo = CircleButton("zoom_out", "Diminuir (Ctrl -)")
         zi = CircleButton("zoom_in", "Aumentar (Ctrl +)")
@@ -463,7 +465,7 @@ class ReaderScreen(_ReaderBase):
         app.lib.mark_opened(self.item)
         self.add_mode_switch()
         try:
-            self.view = PagesView(self, self.item.path)
+            self.view = PagesView(self, self.item.path, self.password)
         except Exception as exc:  # noqa: BLE001
             self.content.addWidget(EmptyState("warning", "Não foi possível abrir o PDF", str(exc)))
             self.finish_content()
@@ -503,7 +505,7 @@ class ReaderScreen(_ReaderBase):
             return
         import pypdfium2 as pdfium
         with core.PDFIUM_LOCK:
-            pdf = pdfium.PdfDocument(str(self.item.path))
+            pdf = pdfium.PdfDocument(str(self.item.path), password=self.password)
         state = {"page": 0, "pdf": pdf, "any_text": False}
         total = len(self.view.sizes)
         timer = QTimer(self)
@@ -660,8 +662,8 @@ class TextReaderScreen(_ReaderBase):
 
     mode = "text"
 
-    def __init__(self, app, item_id: str, start_page: int = 0):
-        super().__init__(app, item_id)
+    def __init__(self, app, item_id: str, start_page: int = 0, password=None):
+        super().__init__(app, item_id, password)
         self.scroll.hide()
         self.matches: list[tuple[int, int]] = []
         self.index = -1
@@ -692,7 +694,7 @@ class TextReaderScreen(_ReaderBase):
         self.add_mode_switch()
         self.set_title(f"{self.item.name} · modo leitor")
         try:
-            self.pages = reader_text.reader_pages(self.item.path)
+            self.pages = reader_text.reader_pages(self.item.path, self.password)
         except Exception as exc:  # noqa: BLE001
             self.pages = []
             self.app.show_error(f"Não foi possível ler o texto: {exc}")

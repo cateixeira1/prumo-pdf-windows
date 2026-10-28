@@ -64,6 +64,7 @@ class DocMeta:
     last_opened: float | None = None
     has_undo: bool = False
     added: float | None = field(default_factory=time.time)
+    locked: bool = False                       # PDF protegido por senha (precisa da senha para abrir)
 
     @classmethod
     def from_dict(cls, d: dict) -> "DocMeta | None":
@@ -299,7 +300,7 @@ class Library:
 
     def needs_ocr_attention(self, item: PDFItem) -> bool:
         m = item.meta
-        if m.is_ocr_result or (m.ocr_copy_id and m.ocr_copy_id in self._metas):
+        if m.locked or m.is_ocr_result or (m.ocr_copy_id and m.ocr_copy_id in self._metas):
             return False
         return m.pending_ocr or needs_ocr_status(m.text_status)
 
@@ -349,6 +350,10 @@ class Library:
         """Roda fora da tela principal. Não altera o arquivo."""
         import core
 
+        import pdfops
+        if pdfops.is_encrypted(path):
+            return {"locked": True, "page_count": pdfops.page_count_locked(path), "status": None,
+                    "ocr_pages": [], "text": ""}
         info = core.analyze_pdf(path)
         if info.error:
             return {"error": info.error, "page_count": None, "status": None, "ocr_pages": [], "text": ""}
@@ -379,6 +384,7 @@ class Library:
             pass
         self._texts[id] = folded
         meta.signature = sig
+        meta.locked = bool(result.get("locked"))
         meta.page_count = result.get("page_count")
         meta.text_status = result.get("status")
         meta.ocr_pages = result.get("ocr_pages") or []

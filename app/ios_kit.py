@@ -376,6 +376,8 @@ class DocTile(TileBase):
     def _badges(self):
         m = self.item.meta
         out = []
+        if getattr(m, "locked", False):
+            out.append(("Com senha", "purple"))
         if m.is_ocr_result:
             out.append(("OCR", "green"))
         if m.review_pages:
@@ -399,6 +401,11 @@ class DocTile(TileBase):
         self.paint_background(p)
         w, h = self.width(), self.height()
         self.thumb.paint(p, QRectF(12, 12, 34, 44), self.item.path, self.item.version)
+        if getattr(self.item.meta, "locked", False):   # PDF com senha: cadeado sobre a miniatura
+            p.setPen(Qt.NoPen)
+            p.setBrush(T.color("purple"))
+            p.drawEllipse(QRectF(17, 22, 24, 24))
+            paint_glyph(p, QRectF(21, 26, 16, 16), "lock", QColor("white"), 1.6)
         # canto superior direito: seleção, número de páginas ou "analisando"
         if self.selection is not None:
             r = QRectF(w - 36, 12, 24, 24)
@@ -419,6 +426,8 @@ class DocTile(TileBase):
             p.setFont(font(10.5, 500))
             p.setPen(self.secondary_color())
             p.drawText(QRectF(54, 36, w - 66, 14), Qt.AlignRight | Qt.AlignVCenter, "página" if n == 1 else "páginas")
+        elif getattr(self.item.meta, "locked", False):
+            paint_glyph(p, QRectF(w - 34, 14, 22, 22), "lock", self.secondary_color(), 1.6)
         else:
             p.setPen(QPen(self.secondary_color(), 2))
             p.drawArc(QRectF(w - 30, 16, 16, 16), 90 * 16, 270 * 16)
@@ -944,7 +953,7 @@ def _line(vertical=False) -> QFrame:
 
 
 def alert(window: QWidget, title: str, message: str = "", buttons=(("OK", "default"),),
-          text: str | None = None, placeholder: str = "", validator=None):
+          text: str | None = None, placeholder: str = "", validator=None, secret: bool = False):
     """
     Alerta no estilo iOS. `buttons` é uma lista de (texto, papel), com papel
     "cancel", "default" ou "destructive". Devolve o índice do botão (ou None se fechar),
@@ -971,6 +980,8 @@ def alert(window: QWidget, title: str, message: str = "", buttons=(("OK", "defau
     if text is not None:
         edit = QLineEdit(text)
         edit.setPlaceholderText(placeholder)
+        if secret:
+            edit.setEchoMode(QLineEdit.Password)   # senha: mostra só pontinhos
         edit.setFont(font(15))
         edit.setStyleSheet(f"QLineEdit {{ background: {T.hex('bg')}; border: 1px solid {T.hex('panel_line')}; "
                            f"border-radius: 8px; padding: 7px 9px; font-size: 15px; color: {T.hex('text')}; }}")
@@ -1099,6 +1110,89 @@ class BusyOverlay(_Overlay):
             self.bar.setValue(done)
         self.detail.setText(detail)
         self._place()
+
+
+class LockOverlay(QWidget):
+    """Tela de trava: cobre a janela inteira até a senha certa ser digitada."""
+
+    unlocked = Signal()
+
+    def __init__(self, window: QWidget, verify, on_forgot):
+        super().__init__(window)
+        self.verify = verify
+        self.setAttribute(Qt.WA_StyledBackground, False)
+        self.setGeometry(window.rect())
+        box = QFrame(self)
+        box.setObjectName("lockBox")
+        box.setFixedWidth(340)
+        box.setStyleSheet(f"#lockBox {{ background: {T.hex('panel')}; border-radius: 18px; }}")
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(26, 26, 26, 22)
+        lay.setSpacing(12)
+        from ios_theme import app_icon
+        logo = QLabel()
+        logo.setPixmap(app_icon().pixmap(64, 64))
+        logo.setAlignment(Qt.AlignCenter)
+        title = QLabel("Prumo PDF está travado")
+        title.setFont(font(18, 700))
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"color: {T.hex('text')}; background: transparent;")
+        self.field = QLineEdit()
+        self.field.setEchoMode(QLineEdit.Password)
+        self.field.setPlaceholderText("Senha do Prumo")
+        self.field.setFont(font(16))
+        self.field.returnPressed.connect(self._try)
+        self.error = QLabel("")
+        self.error.setFont(font(13, 500))
+        self.error.setAlignment(Qt.AlignCenter)
+        self.error.setStyleSheet(f"color: {T.color('red').name()}; background: transparent;")
+        button = PrimaryButton("Desbloquear", "blue")
+        button.clicked.connect(self._try)
+        forgot = QPushButton("Esqueci a senha")
+        forgot.setCursor(Qt.PointingHandCursor)
+        forgot.setFont(font(13, 500))
+        forgot.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {T.color('blue').name()}; }}")
+        forgot.clicked.connect(on_forgot)
+        for w in (logo, title, self.field, self.error, button, forgot):
+            lay.addWidget(w)
+        self.box = box
+        window.installEventFilter(self)
+        self._place()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Resize:
+            self.setGeometry(obj.rect())
+            self._place()
+        return False
+
+    def _place(self):
+        self.box.adjustSize()
+        self.box.move((self.width() - self.box.width()) // 2, (self.height() - self.box.height()) // 2)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.fillRect(self.rect(), T.color("bg"))
+
+    def mousePressEvent(self, e):
+        self.field.setFocus()
+
+    def show_lock(self):
+        self.field.clear()
+        self.error.setText("")
+        self.setGeometry(self.parentWidget().rect())
+        self._place()
+        self.show()
+        self.raise_()
+        self.field.setFocus()
+
+    def _try(self):
+        if self.verify(self.field.text()):
+            self.hide()
+            self.field.clear()
+            self.unlocked.emit()
+        else:
+            self.error.setText("Senha incorreta.")
+            self.field.selectAll()
 
 
 class SheetOverlay(_Overlay):

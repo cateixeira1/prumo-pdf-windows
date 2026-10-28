@@ -775,7 +775,9 @@ class DocHeader(QWidget):
             bx += paint_badge(p, bx, y, TEXT_LABELS[status],
                               T.color("orange" if needs_ocr_status(status) else "blue")) + 4
         if it.meta.is_ocr_result:
-            paint_badge(p, bx, y, "OCR", T.color("green"))
+            bx += paint_badge(p, bx, y, "OCR", T.color("green")) + 4
+        if it.meta.locked:
+            paint_badge(p, bx, y, "Com senha", T.color("purple"))
 
 
 class DocumentScreen(Screen):
@@ -826,6 +828,27 @@ class DocumentScreen(Screen):
             return t
 
         has_ocr = lib.has_ocr_text(item)
+        if item.meta.locked:
+            tile("Ler", "book", "blue", lambda: app.read(item), subtitle="Pede a senha")
+            tile("Remover senha", "lock_open", "purple", lambda: unprotect_dialog(app, item),
+                 subtitle="Cria uma cópia sem senha", rounded=True)
+            tile("Compartilhar", "share", "green", lambda: app.actions.share([item]),
+                 subtitle="Copiar, exportar, Explorador")
+            tile("Renomear", "pencil", "gray", lambda: app.actions.rename(item))
+            tile("Mover", "folder", "brown", lambda: app.actions.move([item]), subtitle=item.folder_name)
+            tile("Favorito" if item.meta.favorite else "Favoritar", "star", "yellow",
+                 lambda: lib.set_favorite(item, not item.meta.favorite), rounded=True, selected=item.meta.favorite)
+            self.content.addWidget(g)
+            note = Label("Este PDF tem senha. Para fazer OCR, organizar ou dividir, crie antes uma cópia sem senha.",
+                         13, 400, "secondary")
+            note.setContentsMargins(4, 0, 4, 0)
+            self.content.addWidget(note)
+            d = WideTile("Excluir", "trash_fill", "red")
+            d.clicked.connect(lambda: app.actions.delete([item], after=app.back))
+            self.content.addWidget(d)
+            self.finish_content()
+            self.scroll.verticalScrollBar().setValue(pos)
+            return
         tile("Ler", "book", "blue", lambda: app.read(item), subtitle="Páginas, modo leitor e busca")
         tile("Compartilhar", "share", "green", lambda: app.actions.share([item]),
              subtitle="Copiar, exportar, Explorador")
@@ -846,6 +869,8 @@ class DocumentScreen(Screen):
         tile("Favorito" if item.meta.favorite else "Favoritar", "star", "yellow",
              lambda: lib.set_favorite(item, not item.meta.favorite), rounded=True, selected=item.meta.favorite)
         tile("Duplicar", "duplicate", "gray", lambda: self._duplicate(item), rounded=True)
+        tile("Proteger com senha", "lock", "purple", lambda: protect_dialog(app, item),
+             subtitle="Criptografia padrão de PDF", rounded=True)
         self.content.addWidget(g)
         if lib.can_undo(item):
             u = WideTile("Desfazer última alteração", "undo", "gray",
@@ -1253,6 +1278,153 @@ def dewarp_dialog(app, item):
     else:
         lib.set_pending_ocr(new, True)
     app.open_document(new.id)
+
+
+# --- Senha do app ------------------------------------------------------------------------
+
+def set_app_password(app, change=False):
+    if change:
+        idx, cur = alert(app, "Mudar a senha do Prumo", "Digite a senha atual.",
+                         [("Cancelar", "cancel"), ("Continuar", "default")], text="", placeholder="Senha atual",
+                         secret=True)
+        if idx != 1:
+            return
+        if not app._verify_lock(cur):
+            app.show_error("Senha atual incorreta.")
+            return
+    ov = SheetOverlay(app, 420)
+    sheet_header(ov, "Nova senha do Prumo" if change else "Criar senha do Prumo")
+    card = TileCard()
+    pw1, pw2 = QLineEdit(), QLineEdit()
+    for e, ph in ((pw1, "Senha"), (pw2, "Repita a senha")):
+        e.setEchoMode(QLineEdit.Password)
+        e.setPlaceholderText(ph)
+        card.lay.addWidget(e)
+    info = Label("", 13, 500, "red")
+    card.lay.addWidget(info)
+    card.lay.addWidget(Label("Guarde a senha num lugar seguro. Se esquecer, dá para desfazer a trava pelos ajustes do "
+                             "Windows (passo a passo no LEIA-ME); os PDFs não são afetados.", 13, 400, "secondary"))
+    wrap = QVBoxLayout()
+    wrap.setContentsMargins(16, 4, 16, 16)
+    wrap.setSpacing(12)
+    wrap.addWidget(card)
+    btn = PrimaryButton("Salvar senha", "purple")
+    btn.setEnabled(False)
+    wrap.addWidget(btn)
+    ov.lay.addLayout(wrap)
+    ov.focus_widget = pw1
+
+    def check():
+        a, b = pw1.text(), pw2.text()
+        info.setText("Use pelo menos 4 caracteres." if a and len(a) < 4 else
+                     "As senhas não são iguais." if b and a != b else "")
+        btn.setEnabled(len(a) >= 4 and a == b)
+    pw1.textChanged.connect(check)
+    pw2.textChanged.connect(check)
+    btn.clicked.connect(lambda: ov.done(True))
+    pw2.returnPressed.connect(lambda: btn.isEnabled() and ov.done(True))
+    if ov.run():
+        app.set_lock_password(pw1.text())
+        app.toast("Senha salva. O Prumo vai pedir a senha ao abrir (e Ctrl+L trava na hora).")
+        app.current().refresh()
+
+
+def remove_app_password(app):
+    idx, cur = alert(app, "Remover a senha do Prumo", "Digite a senha atual para remover a trava.",
+                     [("Cancelar", "cancel"), ("Remover", "destructive")], text="", placeholder="Senha atual",
+                     secret=True)
+    if idx != 1:
+        return
+    if not app._verify_lock(cur):
+        app.show_error("Senha incorreta.")
+        return
+    app.set_lock_password(None)
+    app.toast("Senha removida: o Prumo abre sem pedir senha.")
+    app.current().refresh()
+
+
+# --- Senha no PDF ------------------------------------------------------------------------
+
+def protect_dialog(app, item):
+    """Cria uma cópia do PDF com senha (AES-256, o padrão de PDF), que abre em qualquer leitor com a senha."""
+    ov = SheetOverlay(app, 460)
+    sheet_header(ov, "Proteger com senha")
+    card = TileCard()
+    card.lay.setSpacing(8)
+    card.lay.addWidget(Label(f"“{item.name}”", 15, 600))
+    card.lay.addWidget(Label("A cópia protegida só abre com a senha, em qualquer leitor de PDF (Adobe, Edge, Chrome, "
+                             "iPhone). Usa a criptografia padrão de PDF (AES-256).", 13, 400, "secondary"))
+    pw1, pw2 = QLineEdit(), QLineEdit()
+    for e, ph in ((pw1, "Senha"), (pw2, "Repita a senha")):
+        e.setEchoMode(QLineEdit.Password)
+        e.setPlaceholderText(ph)
+        card.lay.addWidget(e)
+    info = Label("", 13, 500, "red")
+    card.lay.addWidget(info)
+    trash = QCheckBox("Mandar o original (sem senha) para a Lixeira")
+    trash.setChecked(True)
+    card.lay.addWidget(trash)
+    warn = Label("Importante: se você esquecer a senha, não há como abrir o PDF, nem pelo Prumo. Guarde a senha "
+                 "num lugar seguro. Evite acentos e “ç” na senha: alguns leitores de PDF não os entendem.",
+                 13, 500, "orange")
+    card.lay.addWidget(warn)
+    wrap = QVBoxLayout()
+    wrap.setContentsMargins(16, 4, 16, 16)
+    wrap.setSpacing(12)
+    wrap.addWidget(card)
+    btn = PrimaryButton("Proteger", "purple")
+    btn.setEnabled(False)
+    wrap.addWidget(btn)
+    ov.lay.addLayout(wrap)
+    ov.focus_widget = pw1
+
+    def check():
+        a, b = pw1.text(), pw2.text()
+        msg = ""
+        if a and len(a) < 4:
+            msg = "Use pelo menos 4 caracteres."
+        elif b and a != b:
+            msg = "As senhas não são iguais."
+        info.setText(msg)
+        btn.setEnabled(bool(a) and a == b and len(a) >= 4)
+    pw1.textChanged.connect(check)
+    pw2.textChanged.connect(check)
+    btn.clicked.connect(lambda: ov.done(True))
+    pw2.returnPressed.connect(lambda: btn.isEnabled() and ov.done(True))
+    if not ov.run():
+        return
+    password = pw1.text()
+    lib = app.lib
+    tmp = lib.temp_path()
+    try:
+        pdfops.protect(item.path, tmp, password)
+        new = lib.adopt(tmp, f"{item.name} - protegido", item.folder)
+    except Exception as exc:  # noqa: BLE001
+        tmp.unlink(missing_ok=True)
+        app.show_error(f"Não foi possível proteger: {exc}")
+        return
+    if trash.isChecked():
+        app.attempt(lambda: lib.delete([lib.item(item.id)] if lib.item(item.id) else []))
+        app.back()
+    app.toast(f"PDF protegido: {new.name}", "Abrir", lambda: app.open_document(new.id))
+
+
+def unprotect_dialog(app, item):
+    """Cria uma cópia sem senha (com a senha atual), para fazer OCR, organizar páginas etc."""
+    pw = app.ask_pdf_password(item, "Remover a senha")
+    if pw is None:
+        return
+    lib = app.lib
+    tmp = lib.temp_path()
+    try:
+        pdfops.unprotect(item.path, tmp, pw)
+        name = item.name[:-len(" - protegido")] if item.name.endswith(" - protegido") else f"{item.name} - sem senha"
+        new = lib.adopt(tmp, name, item.folder)
+    except Exception as exc:  # noqa: BLE001
+        tmp.unlink(missing_ok=True)
+        app.show_error(f"Não foi possível remover a senha: {exc}")
+        return
+    app.toast(f"Cópia sem senha: {new.name}", "Abrir", lambda: app.open_document(new.id))
 
 
 # --- Escolher páginas (remover, extrair) --------------------------------------
@@ -1789,6 +1961,36 @@ class SettingsScreen(Screen):
         row.addWidget(small_button("Restaurar de uma cópia…", app.restore_from))
         row.addStretch(1)
         card.lay.addLayout(row)
+        c.addWidget(card)
+
+        c.addWidget(SectionTitle("Segurança"))
+        card = TileCard()
+        import security
+        on = app.lock_enabled
+        card.lay.addLayout(status_row("lock" if on else "lock_open", "purple" if on else "secondary",
+                                      "Senha para abrir o Prumo: ligada" if on else "Senha para abrir o Prumo: desligada",
+                                      "O Prumo pede a senha ao abrir e depois de um tempo sem uso (Ctrl+L trava na hora)."
+                                      if on else "Qualquer pessoa com acesso a este computador abre o Prumo."))
+        row = QHBoxLayout()
+        if on:
+            row.addWidget(small_button("Mudar senha…", lambda: set_app_password(app, change=True)))
+            row.addWidget(small_button("Remover senha…", lambda: remove_app_password(app), "red"))
+        else:
+            row.addWidget(small_button("Criar senha…", lambda: set_app_password(app)))
+        row.addStretch(1)
+        card.lay.addLayout(row)
+        if on:
+            idle = QComboBox()
+            for minutes, label in security.IDLE_OPTIONS:
+                idle.addItem(label, minutes)
+            idle.setCurrentIndex(max(0, idle.findData(int(app.setting("app_lock_idle", 10) or 0))))
+            idle.currentIndexChanged.connect(lambda _i: (app.set_setting("app_lock_idle", idle.currentData()),
+                                                         app._restart_idle()))
+            card.lay.addWidget(idle)
+        card.lay.addWidget(Label(
+            "A senha trava a tela do Prumo. Os PDFs continuam como arquivos comuns na pasta da biblioteca: para "
+            "proteger um arquivo em si (por exemplo, antes de enviar), use “Proteger com senha” na tela do PDF, que "
+            "usa a criptografia padrão de PDF (AES-256) e abre em qualquer leitor com a senha.", 13, 400, "secondary"))
         c.addWidget(card)
 
         c.addWidget(SectionTitle("Windows"))

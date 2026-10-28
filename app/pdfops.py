@@ -198,3 +198,62 @@ def _save_inplace(pdf, path: str | Path) -> None:
     pdf.save(str(tmp), object_stream_mode=pikepdf.ObjectStreamMode.generate)
     pdf.close()
     os.replace(tmp, path)
+
+
+# --- Senha (criptografia padrão de PDF) ---------------------------------------------------
+
+def is_encrypted(path: str | Path) -> bool:
+    """O PDF pede senha para abrir? (Só a senha de dono, sem senha de abertura, não conta.)"""
+    import pikepdf
+    try:
+        with pikepdf.open(str(path)):
+            return False
+    except pikepdf.PasswordError:
+        return True
+    except Exception:
+        return False
+
+
+def page_count_locked(path: str | Path) -> int | None:
+    """Número de páginas de um PDF com senha, lido sem abrir o conteúdo (quando der)."""
+    import re
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return None
+    counts = [int(m.group(1)) for m in re.finditer(rb"/Type\s*/Pages\b[^>]*?/Count\s+(\d+)", data)]
+    counts += [int(m.group(1)) for m in re.finditer(rb"/Count\s+(\d+)[^>]*?/Type\s*/Pages\b", data)]
+    return max(counts) if counts else None
+
+
+def check_password(path: str | Path, password: str) -> bool:
+    import pikepdf
+    try:
+        with pikepdf.open(str(path), password=password):
+            return True
+    except pikepdf.PasswordError:
+        return False
+
+
+def protect(src: str | Path, dest: str | Path, password: str) -> None:
+    """
+    Grava uma cópia com senha, na criptografia padrão de PDF (AES-256): qualquer leitor de PDF
+    (Adobe, Edge, Chrome, o do iPhone) abre com a senha. Sem a senha, não há como abrir.
+    """
+    import pikepdf
+    if not password:
+        raise UserError("Digite uma senha.")
+    with _open(src) as pdf:
+        pdf.save(str(dest), encryption=pikepdf.Encryption(owner=password, user=password, R=6, aes=True),
+                 object_stream_mode=pikepdf.ObjectStreamMode.generate)
+
+
+def unprotect(src: str | Path, dest: str | Path, password: str) -> None:
+    """Grava uma cópia sem senha (precisa da senha atual)."""
+    import pikepdf
+    try:
+        pdf = pikepdf.open(str(src), password=password)
+    except pikepdf.PasswordError:
+        raise UserError("Senha incorreta.") from None
+    with pdf:
+        pdf.save(str(dest), object_stream_mode=pikepdf.ObjectStreamMode.generate)

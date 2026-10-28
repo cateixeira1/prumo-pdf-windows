@@ -24,13 +24,13 @@ REVIEW_LOW_RATIO = 0.10
 
 # --- Miniaturas ---------------------------------------------------------------
 
-def render_page(path: str | Path, page: int, px_width: int) -> QImage | None:
+def render_page(path: str | Path, page: int, px_width: int, password: str | None = None) -> QImage | None:
     """Renderiza uma página (começando em 0) com a largura pedida, em pixels."""
     import pypdfium2 as pdfium
 
     with core.PDFIUM_LOCK:
         try:
-            pdf = pdfium.PdfDocument(str(path))
+            pdf = pdfium.PdfDocument(str(path), password=password)
         except Exception:
             return None
         try:

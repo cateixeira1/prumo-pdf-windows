@@ -11,6 +11,7 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **Organizar páginas:** arraste para mudar a ordem (a lista rola sozinha perto das bordas), gire, exclua, desfaça; Ctrl+roda do mouse muda o tamanho das miniaturas.
 - **Incluir páginas** de outro PDF (ou do próprio): todas ou trechos como 5-15, no início, no fim ou depois de uma página.
 - **Corrigir páginas curvas:** fotos de livros e revistas (página curvada perto da lombada), papel ondulado ou dobrado ficam com o texto reto, o que também melhora o OCR. Na tela do PDF, “Corrigir páginas curvas” mostra o antes e o depois e cria uma cópia “- corrigido” (só as páginas escolhidas mudam). Em Ajustes, dá para corrigir automaticamente as fotos ao converter. Usa o modelo UVDoc, que roda inteiramente no computador.
+- **Segurança:** em Ajustes, uma **senha para abrir o Prumo** (trava ao abrir, depois de um tempo sem uso e com Ctrl+L). Na tela do PDF, **Proteger com senha** cria uma cópia com a criptografia padrão de PDF (AES-256), que abre em qualquer leitor com a senha; **Remover senha** cria uma cópia sem senha (sabendo a senha), para fazer OCR, organizar ou dividir. PDFs com senha aparecem com um cadeado e pedem a senha ao abrir no leitor.
 - **Converter em PDF:** fotos e imagens (JPG, PNG, HEIC do iPhone, TIFF de várias páginas, BMP, GIF, WebP), Word, Excel e PowerPoint (DOC, DOCX, RTF, ODT, XLS, XLSX, ODS, PPT, PPTX, ODP), texto (TXT, CSV) e HTML. Várias fotos podem virar um PDF só, uma por página A4, ou um PDF para cada; depois, o app pergunta se quer fazer o OCR. Os arquivos do Office são convertidos pelo próprio Office instalado (como o “Salvar como PDF”) ou, sem Office, pelo LibreOffice; sem nenhum dos dois, um .docx ainda é convertido de forma simplificada. Também dá para importar ou arrastar esses arquivos direto: eles viram PDF na hora.
 - **OCR em português:** só as páginas em imagem passam pelo OCR; páginas que já têm texto ficam como estão. O resultado é uma cópia com “- OCR” no nome, na mesma pasta. Páginas com baixa confiança são marcadas para revisão.
 - **Remover, extrair, dividir em partes iguais e combinar.** Na divisão, um PDF de 200 páginas em 4 partes vira “Nome - Parte 1” a “Parte 4”.
@@ -22,13 +23,13 @@ Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá pa
 - **Backup:** os Ajustes mostram se os PDFs estão só neste computador ou numa nuvem. Se o OneDrive, o Google Drive, o iCloud Drive ou o Dropbox estiverem instalados, um clique leva a biblioteca para lá (com backup automático). Também dá para fazer uma **cópia de segurança** completa (PDFs, pastas e favoritos) num pendrive ou HD externo e **restaurar** depois, sem duplicar arquivos. A cópia é uma pasta comum e abre também no Prumo para iPhone.
 - **No Windows:** o Prumo aparece em **Abrir com** nos PDFs (sem trocar o seu leitor padrão) e, no botão direito de fotos e arquivos do Word, Excel e PowerPoint, em **Converter em PDF com o Prumo**. Com o Prumo já aberto, os arquivos vão para a mesma janela.
 
-Próxima etapa: segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
+A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ---
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.6.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.7.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
@@ -53,6 +54,16 @@ Depois disso, o programa funciona sem internet.
 - Escaneie a 300 DPI, em tons de cinza, com a folha reta.
 - Fotos de celular: boa iluminação, sem sombra, enquadrando só a folha.
 - Texto manuscrito, carimbos sobrepostos e tabelas complexas tendem a ter mais erros.
+
+### Esqueci a senha do Prumo
+
+Por segurança, não há como ver a senha. Para desfazer a trava, feche o Prumo, abra o **Prompt de Comando** (menu Iniciar › digite “cmd”) e rode:
+
+```
+reg delete "HKCU\Software\Prumo\PrumoPDF" /v app_lock_hash /f
+```
+
+Na próxima vez, o Prumo abre sem senha (e dá para criar outra em Ajustes). Os PDFs não são afetados: continuam na pasta da biblioteca. Isso vale só para a senha do app: **a senha de um PDF protegido não tem como ser recuperada**, nem pelo Prumo nem por outro programa.
 
 ## 3. Para quem for mexer no código
 

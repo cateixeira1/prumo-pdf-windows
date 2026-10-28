@@ -51,11 +51,78 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+O"), self, lambda: self.import_dialog(self._drop_folder()))
         QShortcut(QKeySequence("F5"), self, lambda: self.lib.reload())
         self.push(HomeScreen(self))
+        self._setup_lock()
         geo = self.settings.value("geometry")
         if geo is not None:
             self.restoreGeometry(geo)
         else:
             self.resize(1100, 780)
+
+    # --- trava com senha ---
+    def _setup_lock(self):
+        from PySide6.QtCore import QEvent as _E
+        from ios_kit import LockOverlay
+        self.lock = LockOverlay(self, self._verify_lock, self._forgot_lock)
+        self.lock.hide()
+        self.lock.unlocked.connect(self._after_unlock)
+        self._pending_external = None
+        self._idle = QTimer(self)
+        self._idle.setSingleShot(True)
+        self._idle.timeout.connect(self.lock_now)
+        self._input_events = {_E.MouseButtonPress, _E.KeyPress, _E.Wheel, _E.MouseMove}
+        QApplication.instance().installEventFilter(self)
+        QShortcut(QKeySequence("Ctrl+L"), self, self.lock_now)
+        if self.lock_enabled:
+            self.lock.show_lock()
+        self._restart_idle()
+
+    @property
+    def lock_enabled(self) -> bool:
+        return bool(self.setting("app_lock_hash", ""))
+
+    @property
+    def is_locked(self) -> bool:
+        return self.lock.isVisible()
+
+    def _verify_lock(self, password: str) -> bool:
+        import security
+        return security.verify_password(password, self.setting("app_lock_hash", ""))
+
+    def _forgot_lock(self):
+        alert(self, "Esqueceu a senha do Prumo?",
+              "Por segurança, não há como ver a senha. Dá para desfazer a trava apagando a senha dos ajustes "
+              "do Prumo: o passo a passo está no LEIA-ME (seção “Esqueci a senha do Prumo”). Os PDFs não são "
+              "afetados: continuam na pasta da biblioteca, visíveis no Explorador de Arquivos.",
+              [("OK", "default")])
+
+    def lock_now(self):
+        if self.lock_enabled and not self.is_locked:
+            self.lock.show_lock()
+
+    def _restart_idle(self):
+        minutes = int(self.setting("app_lock_idle", 10) or 0)
+        if self.lock_enabled and minutes > 0:
+            self._idle.start(minutes * 60_000)
+        else:
+            self._idle.stop()
+
+    def _after_unlock(self):
+        self._restart_idle()
+        if self._pending_external:
+            o, c = self._pending_external
+            self._pending_external = None
+            self.handle_external(o, c)
+
+    def eventFilter(self, obj, ev):
+        if getattr(self, "_input_events", None) and ev.type() in self._input_events and not self.is_locked:
+            if not self._idle.isActive() or self._idle.remainingTime() < self._idle.interval() - 2000:
+                self._restart_idle()
+        return False
+
+    def set_lock_password(self, password: str | None):
+        import security
+        self.set_setting("app_lock_hash", security.hash_password(password) if password else "")
+        self._restart_idle()
 
     # --- preferências ---
     def setting(self, key, default=None):
@@ -112,6 +179,8 @@ class MainWindow(QMainWindow):
 
     def _overlay_open(self) -> bool:
         from ios_kit import _Overlay
+        if getattr(self, "lock", None) is not None and self.is_locked:
+            return True
         return any(isinstance(c, _Overlay) and c.isVisible() for c in self.children())
 
     def _focus_search(self):
@@ -196,6 +265,12 @@ class MainWindow(QMainWindow):
         from reader import ReaderScreen
         from reader import TextReaderScreen
         lib = self.lib
+        if getattr(item.meta, "locked", False):
+            pw = self.ask_pdf_password(item)
+            if pw is not None:
+                self.lib.mark_opened(item)
+                self.push(ReaderScreen(self, item.id, password=pw))
+            return
         ocr = lib.ocr_copy(item)
         if ocr is not None and not item.meta.is_ocr_result:
             idx = action_sheet(self, "Como você quer ler?",
@@ -210,6 +285,20 @@ class MainWindow(QMainWindow):
                 return
             item = ocr if idx == 1 else item
         self.push(ReaderScreen(self, item.id))
+
+    def ask_pdf_password(self, item, title: str | None = None):
+        """Pede a senha de um PDF protegido. Devolve a senha certa ou None."""
+        import pdfops
+        msg = "Este PDF está protegido. Digite a senha para abrir."
+        while True:
+            idx, pw = alert(self, title or f"“{item.name}” tem senha", msg,
+                            [("Cancelar", "cancel"), ("Abrir", "default")], text="", placeholder="Senha",
+                            secret=True)
+            if idx != 1:
+                return None
+            if pdfops.check_password(item.path, pw):
+                return pw
+            msg = "Senha incorreta. Tente de novo (maiúsculas e minúsculas fazem diferença)."
 
     def organize(self, item):
         from organize import OrganizeScreen
@@ -555,6 +644,14 @@ class MainWindow(QMainWindow):
         """PDFs abertos pelo Windows: abre no leitor (sem importar duas vezes). Outros arquivos: converte."""
         import backup
         import convert
+        if getattr(self, "lock", None) is not None and self.is_locked:
+            # travado: guarda os arquivos e trata depois da senha
+            prev = self._pending_external or ([], [])
+            self._pending_external = (list(prev[0]) + list(open_paths), list(prev[1]) + list(convert_paths))
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+            return
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -665,6 +762,8 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._place_bottom()
+        if getattr(self, "lock", None) is not None and self.lock.isVisible():
+            self.lock.raise_()
 
     def changeEvent(self, e):
         from PySide6.QtCore import QEvent

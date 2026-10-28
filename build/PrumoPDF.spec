@@ -25,7 +25,7 @@ a = Analysis(
         "ocr_worker", "ocr_plugin", "core", "ui_common",
         "page_ocr", "page_merge", "page_extract",
         "library", "pdfops", "services", "ocr_runner", "ios_theme", "ios_kit",
-        "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert", "backup", "dewarp", "onnxruntime",
+        "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert", "backup", "dewarp", "onnxruntime", "security",
         "mammoth", "pillow_heif", "img2pdf",
     ],
     hookspath=[],
