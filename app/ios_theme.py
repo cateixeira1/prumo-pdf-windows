@@ -111,8 +111,25 @@ def font(px: float, weight: int = 400, display: bool = False) -> QFont:
     return f
 
 
+def _chevron_file(color: str, up: bool = False) -> str:
+    """Seta das caixas de seleção, gravada uma vez como SVG (o Qt só lê imagens de arquivo no estilo)."""
+    import tempfile
+    from pathlib import Path
+
+    name = f"prumo_chevron_{'up' if up else 'down'}_{color.strip('#')}.svg"
+    path = Path(tempfile.gettempdir()) / name
+    if not path.exists():
+        d = "M6 15l6-6 6 6" if up else "M6 9l6 6 6-6"
+        path.write_text(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+                        f'stroke="{color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
+                        f'<path d="{d}"/></svg>', encoding="utf-8")
+    return path.as_posix()
+
+
 def stylesheet() -> str:
     t = T.hex
+    down = _chevron_file(t('secondary'))
+    up = _chevron_file(t('secondary'), up=True)
     return f"""
 QWidget {{ color: {t('text')}; }}
 QMainWindow, #screen, #scrollBody {{ background: {t('bg')}; }}
@@ -120,7 +137,9 @@ QScrollArea {{ background: transparent; border: none; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 4px 2px; }}
 QScrollBar::handle:vertical {{ background: {t('placeholder')}; border-radius: 3px; min-height: 40px; }}
 QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{ height: 0; background: none; }}
-QScrollBar:horizontal {{ height: 0; }}
+QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px 4px; }}
+QScrollBar::handle:horizontal {{ background: {t('placeholder')}; border-radius: 3px; min-width: 40px; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
 QLineEdit {{ background: {t('search')}; border: none; border-radius: 10px; padding: 8px 12px;
              selection-background-color: {ACCENTS['blue'].name()}; selection-color: white; }}
 QMenu {{ background: {t('panel')}; border: 1px solid {t('panel_line')}; border-radius: 12px; padding: 6px; }}
@@ -131,9 +150,16 @@ QMenu::separator {{ height: 1px; background: {t('panel_line')}; margin: 5px 8px;
 QMenu::icon {{ padding-left: 8px; }}
 QToolTip {{ background: {t('panel')}; color: {t('text')}; border: 1px solid {t('panel_line')}; padding: 5px 8px; border-radius: 6px; }}
 QCheckBox {{ spacing: 10px; }}
-QComboBox {{ background: {t('search')}; border: none; border-radius: 10px; padding: 7px 12px; }}
+QComboBox {{ background: {t('search')}; border: none; border-radius: 10px; padding: 7px 34px 7px 12px; }}
+QComboBox::drop-down {{ border: none; width: 30px; subcontrol-origin: padding; subcontrol-position: center right; }}
+QComboBox::down-arrow {{ image: url("{down}"); width: 14px; height: 14px; }}
 QComboBox QAbstractItemView {{ background: {t('panel')}; border: 1px solid {t('panel_line')}; selection-background-color: {t('tile')}; selection-color: {t('text')}; outline: 0; }}
-QSpinBox {{ background: {t('search')}; border: none; border-radius: 10px; padding: 6px 10px; }}
+QSpinBox {{ background: {t('search')}; border: none; border-radius: 10px; padding: 7px 30px 7px 12px; }}
+QSpinBox::up-button, QSpinBox::down-button {{ border: none; width: 26px; background: transparent; }}
+QSpinBox::up-button {{ subcontrol-position: top right; }}
+QSpinBox::down-button {{ subcontrol-position: bottom right; }}
+QSpinBox::up-arrow {{ image: url("{up}"); width: 12px; height: 12px; }}
+QSpinBox::down-arrow {{ image: url("{down}"); width: 12px; height: 12px; }}
 QProgressBar {{ background: {t('search')}; border: none; border-radius: 3px; max-height: 6px; color: transparent; }}
 QProgressBar::chunk {{ background: {ACCENTS['blue'].name()}; border-radius: 3px; }}
 """
@@ -190,6 +216,14 @@ GLYPHS = {
     "plus": '<path d="M12 5v14M5 12h14" stroke-width="2.2"/>',
     "drag": '<path d="M5 8h14M5 12h14M5 16h14"/>',
     "mail": '<rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4 7l8 6 8-6"/>',
+    "star_line": '<path d="M12 3.6l2.5 5.3 5.8.7-4.3 4 1.1 5.8L12 16.6l-5.1 2.8 1.1-5.8-4.3-4 5.8-.7z"/>',
+    "rotate_left": '<path d="M4.5 4.5v5h5"/><path d="M5 9.5a7.5 7.5 0 1 1 1.6 7.6"/>',
+    "rotate_right": '<path d="M19.5 4.5v5h-5"/><path d="M19 9.5a7.5 7.5 0 1 0-1.6 7.6"/>',
+    "zoom_in": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20.5 20.5M8 10.5h5M10.5 8v5"/>',
+    "zoom_out": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20.5 20.5M8 10.5h5"/>',
+    "computer": '<rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6M12 16.5V20"/>',
+    "library": '<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/>'
+               '<path d="M16.2 5.2l3.6-.9 3 15.2-3.6.9z" transform="translate(-2 0)"/>',
 }
 
 

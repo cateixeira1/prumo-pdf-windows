@@ -22,7 +22,7 @@ a = Analysis(
         "ocr_worker", "ocr_plugin", "core", "ui_common",
         "page_ocr", "page_merge", "page_extract",
         "library", "pdfops", "services", "ocr_runner", "ios_theme", "ios_kit",
-        "screens", "app_window", "demo",
+        "screens", "app_window", "demo", "organize", "reader",
     ],
     hookspath=[],
     runtime_hooks=[],

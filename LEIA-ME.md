@@ -2,7 +2,12 @@
 
 Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arquivos para a internet, sem coletar dados e sem custo por uso. A partir da versão 1.1.0, a aparência e a organização são as mesmas do Prumo PDF para iPhone.
 
-- **Biblioteca** com cartões, como no iPhone: Todos os PDFs, Recentes, Aguardando OCR, Com OCR, Favoritos, Pastas e busca pelo nome e pelo texto dos PDFs.
+- **Tela inicial com tudo:** as listas (Todos os PDFs, Recentes, Aguardando OCR, Com OCR, Favoritos, Pastas) e todas as ferramentas (Ler, Fazer OCR, Organizar, Incluir, Remover e Extrair páginas, Dividir, Combinar). Cada ferramenta pergunta qual PDF usar: um arquivo do computador ou um que já está no Prumo, filtrando por aba ou pasta.
+- **Cartões de PDF** com a estrela de favorito (clique para preencher e mandar para Favoritos) e os três pontos ⋮ no canto inferior direito, que abrem as opções (o botão direito do mouse continua funcionando).
+- **Pastas:** ao criar uma, já dá para adicionar PDFs do computador ou de qualquer parte do Prumo (outra pasta, Todos os PDFs, Favoritos…), movendo ou copiando.
+- **Leitor próprio**, com zoom e troca entre o original e a cópia com OCR, sem precisar abrir outro programa.
+- **Organizar páginas:** arraste para mudar a ordem (a lista rola sozinha perto das bordas), gire, exclua, desfaça; Ctrl+roda do mouse muda o tamanho das miniaturas.
+- **Incluir páginas** de outro PDF (ou do próprio): todas ou trechos como 5-15, no início, no fim ou depois de uma página.
 - **OCR em português:** só as páginas em imagem passam pelo OCR; páginas que já têm texto ficam como estão. O resultado é uma cópia com “- OCR” no nome, na mesma pasta. Páginas com baixa confiança são marcadas para revisão.
 - **Remover, extrair, dividir em partes iguais e combinar.** Na divisão, um PDF de 200 páginas em 4 partes vira “Nome - Parte 1” a “Parte 4”.
 - **Desfazer** a última alteração de páginas de cada PDF.
@@ -10,7 +15,7 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 
 Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá para mudar em Ajustes). Para ter backup na nuvem que você usa, escolha uma pasta sincronizada pelo OneDrive, Google Drive, iCloud Drive ou Dropbox.
 
-Ainda chegando nas próximas etapas: organizar páginas arrastando, incluir páginas, escanear pela webcam, leitor próprio com modo leitor, correção de páginas curvadas e trava com senha. A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
+Próximas etapas: transformar outros arquivos em PDF, modo leitor e busca no texto, ajustes e backup, correção de páginas curvadas e segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ---
 
@@ -19,7 +24,7 @@ Ainda chegando nas próximas etapas: organizar páginas arrastando, incluir pág
 1. Descompacte esta pasta em um lugar fixo, por exemplo `C:\PrumoPDF`.
 2. Dê dois cliques em **GERAR_INSTALADOR.bat**.
 3. Aguarde. Na primeira vez leva cerca de 10 a 20 minutos, porque o script baixa o Python, as bibliotecas, os modelos de idioma e o Tesseract. É preciso estar conectado à internet nessa etapa.
-4. Ao final, a pasta `dist` abre com o arquivo **Instalador_PrumoPDF_1.1.0.exe** selecionado.
+4. Ao final, a pasta `dist` abre com o arquivo **Instalador_PrumoPDF_1.2.0.exe** selecionado.
 
 Você **não** precisa instalar o Python antes: o script usa o `uv`, que baixa um Python próprio só para esta pasta, sem mexer no resto do computador.
 
@@ -27,7 +32,7 @@ Se o Windows pedir permissão para instalar o Inno Setup (programa que monta o i
 
 ## 2. Instalar
 
-1. Dê dois cliques em **Instalador_PrumoPDF_1.1.0.exe**.
+1. Dê dois cliques em **Instalador_PrumoPDF_1.2.0.exe**.
 2. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 

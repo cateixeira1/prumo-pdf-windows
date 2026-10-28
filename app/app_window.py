@@ -84,13 +84,26 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(screen)
         screen.on_shown()
 
-    def back(self):
+    def back(self, force=False):
         if self.stack.count() <= 1 or self._overlay_open():
             return
         top = self.stack.currentWidget()
+        if not force and hasattr(top, "can_leave") and not top.can_leave():
+            return
+        if hasattr(top, "closing"):
+            top.closing()
         self.stack.removeWidget(top)
         top.deleteLater()
         self.current().on_shown()
+
+    def replace_top(self, screen):
+        """Troca a tela de cima por outra (ex.: leitor do original ↔ leitor da cópia com OCR)."""
+        top = self.stack.currentWidget()
+        if hasattr(top, "closing"):
+            top.closing()
+        self.stack.removeWidget(top)
+        top.deleteLater()
+        self.push(screen)
 
     def _backspace(self):
         from PySide6.QtWidgets import QLineEdit
@@ -109,7 +122,10 @@ class MainWindow(QMainWindow):
 
     def home(self):
         while self.stack.count() > 1:
+            before = self.stack.count()
             self.back()
+            if self.stack.count() == before:   # a tela pediu para ficar (ex.: edição não salva)
+                break
 
     def open_document(self, item_id: str):
         from screens import DocumentScreen
@@ -172,8 +188,52 @@ class MainWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(item.path)))
 
     def read(self, item):
-        # O leitor próprio (com modo leitor) vem na fase 4; por enquanto abre no leitor do Windows.
-        self.open_external(item)
+        """Leitor do próprio Prumo. Se houver as duas versões, pergunta qual ler (como no iPhone)."""
+        from ios_kit import action_sheet
+        from reader import ReaderScreen
+        lib = self.lib
+        ocr = lib.ocr_copy(item)
+        if ocr is not None and not item.meta.is_ocr_result:
+            idx = action_sheet(self, "Ler qual versão?",
+                               "A cópia com OCR tem texto selecionável. O original fica como foi recebido.",
+                               [("Com OCR", "default", "textscan"), ("Original", "default", "docs")])
+            if idx is None:
+                return
+            item = ocr if idx == 0 else item
+        self.push(ReaderScreen(self, item.id))
+
+    def organize(self, item):
+        from organize import OrganizeScreen
+        if self.jobs.is_busy(item.id):
+            self.toast("Espere o OCR deste PDF terminar para organizar as páginas.")
+            return
+        self.push(OrganizeScreen(self, item.id))
+
+    def pick_and_import(self, folder: str = "", multiple: bool = True):
+        """Escolhe PDFs no Windows, copia para a biblioteca e devolve os itens."""
+        start = self.setting("import_dir", str(Path.home() / "Documents"))
+        if multiple:
+            files, _ = QFileDialog.getOpenFileNames(self, "Escolher PDFs no computador", start, "PDF (*.pdf)")
+        else:
+            f, _ = QFileDialog.getOpenFileName(self, "Escolher PDF no computador", start, "PDF (*.pdf)")
+            files = [f] if f else []
+        if not files:
+            return []
+        self.set_setting("import_dir", str(Path(files[0]).parent))
+        root = self.lib.root.resolve()
+        inside, outside = [], []
+        for f in files:
+            (inside if root in Path(f).resolve().parents else outside).append(f)
+        items = []
+        for f in inside:   # já está na biblioteca: usa o próprio arquivo
+            it = self.lib.item_by_path(self.lib.rel_of(Path(f).resolve()))
+            if it:
+                items.append(it)
+        res = {}
+        if outside and self.attempt(lambda: res.setdefault("items", self.lib.import_files(outside, folder)),
+                                    busy="Importando…"):
+            items.extend(res["items"])
+        return items
 
     def copy_files(self, paths):
         mime = QMimeData()
@@ -246,11 +306,6 @@ class MainWindow(QMainWindow):
     def dropEvent(self, e):
         paths = [u.toLocalFile() for u in e.mimeData().urls() if u.toLocalFile()]
         self.import_paths(paths, self._drop_folder())
-
-    def scan(self):
-        alert(self, "Escanear",
-              "O escaneamento pela câmera ou pela webcam chega na etapa 3 da versão para Windows. "
-              "Por enquanto, use Importar ou arraste os PDFs para a janela.", [("OK", "default")])
 
     def change_library(self):
         new = QFileDialog.getExistingDirectory(self, "Escolher a pasta da biblioteca", str(self.lib.root.parent))

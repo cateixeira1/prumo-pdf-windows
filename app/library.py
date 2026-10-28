@@ -513,6 +513,21 @@ class Library:
         shutil.copy2(item.path, dest)
         return self.register(dest)
 
+    def copy_into(self, items: list[PDFItem], folder: str) -> list[PDFItem]:
+        """Copia PDFs da biblioteca para outra pasta (o original continua onde estava)."""
+        rels = []
+        for it in items:
+            dest = self.unique_path(folder, it.name)
+            shutil.copy2(it.path, dest)
+            meta = DocMeta(path=self.rel_of(dest), favorite=False, text_status=it.meta.text_status,
+                           page_count=it.meta.page_count, ocr_pages=it.meta.ocr_pages,
+                           is_ocr_result=it.meta.is_ocr_result)
+            self._metas[meta.id] = meta
+            rels.append(meta.path)
+        self.save_meta()
+        self.reload()
+        return [i for i in (self.item_by_path(r) for r in rels) if i]
+
     def import_files(self, paths: list[str | Path], folder: str = "") -> list[PDFItem]:
         rels = []
         for p in paths:

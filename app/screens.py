@@ -7,7 +7,8 @@ import time
 from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIntValidator, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QHBoxLayout,
-                               QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget)
+                               QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
+                               QWidget)
 
 import pdfops
 from ios_kit import (CircleButton, DocTile, EmptyState, FlowGrid, Label, PrimaryButton, Screen,
@@ -105,6 +106,11 @@ class Actions:
     def ocr(self, item):
         self.app.start_ocr(item)
 
+    def toggle_favorite(self, item):
+        on = not item.meta.favorite
+        self.lib.set_favorite(item, on)
+        self.app.toast("Adicionado aos Favoritos." if on else "Removido dos Favoritos.")
+
     def context_menu(self, tile, item, pos, extra_open=True):
         m = styled_menu(tile)
         if extra_open:
@@ -113,8 +119,9 @@ class Actions:
         menu_action(m, "Compartilhar…", "share", lambda: self.share([item]))
         if self.lib.needs_ocr_attention(item):
             menu_action(m, "Fazer OCR", "textscan", lambda: self.ocr(item))
+        menu_action(m, "Organizar páginas", "grid", lambda: self.app.organize(item))
         menu_action(m, "Remover dos favoritos" if item.meta.favorite else "Favoritar", "star",
-                    lambda: self.lib.set_favorite(item, not item.meta.favorite))
+                    lambda: self.toggle_favorite(item))
         m.addSeparator()
         menu_action(m, "Renomear", "pencil", lambda: self.rename(item))
         menu_action(m, "Mover para pasta", "folder_line", lambda: self.move([item]))
@@ -125,11 +132,16 @@ class Actions:
 
 
 def make_doc_tile(app, item, show_folder=False, on_click=None, menu=True):
-    tile = DocTile(item, app.hub.thumbs, needs_ocr=app.lib.needs_ocr_attention(item), show_folder=show_folder)
+    tile = DocTile(item, app.hub.thumbs, needs_ocr=app.lib.needs_ocr_attention(item), show_folder=show_folder,
+                   show_actions=menu)
     tile.clicked.connect(on_click or (lambda: app.open_document(item.id)))
     if menu:
+        current = lambda: app.lib.item(item.id) or item  # noqa: E731
         tile.setContextMenuPolicy(Qt.CustomContextMenu)
-        tile.customContextMenuRequested.connect(lambda pos: app.actions.context_menu(tile, app.lib.item(item.id) or item, pos))
+        tile.customContextMenuRequested.connect(lambda pos: app.actions.context_menu(tile, current(), pos))
+        tile.menu_clicked.connect(
+            lambda: app.actions.context_menu(tile, current(), tile.dots_rect().bottomRight().toPoint()))
+        tile.star_clicked.connect(lambda: app.actions.toggle_favorite(current()))
     return tile
 
 
@@ -160,6 +172,43 @@ def create_folder(app, parent="") -> str | None:
         if app.attempt(lambda: result.setdefault("p", app.lib.create_folder(name, parent))):
             return result.get("p")
     return None
+
+
+def add_pdfs_to_folder(app, folder: str) -> list:
+    """
+    Adiciona PDFs a uma pasta: do computador (copia para dentro dela) ou de qualquer lugar
+    da biblioteca (outra pasta, Todos os PDFs, Favoritos…), movendo ou copiando.
+    """
+    name = folder.rsplit("/", 1)[-1] if folder else "Sem pasta"
+    picked = choose_documents(app, f"Adicionar a “{name}”", multiple=True, allow_import=True,
+                              import_folder=folder, exclude_folder=folder)
+    if not picked:
+        return []
+    from_lib = [i for i in picked if i.folder != folder]
+    if not from_lib:
+        return picked   # vieram do computador e já foram copiados para a pasta
+    n = len(from_lib)
+    idx = alert(app, f"Mover ou copiar {'o PDF' if n == 1 else f'os {n} PDFs'}?",
+                "“Mover” tira o arquivo da pasta onde ele está. “Copiar” deixa o original lá e cria "
+                "uma cópia nesta pasta.",
+                [("Mover", "default"), ("Copiar", "default"), ("Cancelar", "cancel")])
+    if idx == 0:
+        if app.attempt(lambda: app.lib.move(from_lib, folder)):
+            app.toast(f"{'PDF movido' if n == 1 else f'{n} PDFs movidos'} para {name}.")
+    elif idx == 1:
+        if app.attempt(lambda: app.lib.copy_into(from_lib, folder), busy="Copiando…"):
+            app.toast(f"{'PDF copiado' if n == 1 else f'{n} PDFs copiados'} para {name}.")
+    return picked
+
+
+def new_folder_flow(app, parent=""):
+    """Cria a pasta, abre e oferece adicionar PDFs logo em seguida."""
+    path = create_folder(app, parent)
+    if path is None:
+        return None
+    app.push(DocumentGridScreen(app, folder=path))
+    add_pdfs_to_folder(app, path)
+    return path
 
 
 def rename_folder(app, path):
@@ -254,6 +303,11 @@ def pick_folder(app, title: str, current: str | None):
 # --- Tela inicial ---------------------------------------------------------------
 
 class HomeScreen(Screen):
+    """
+    Tela inicial: listas da biblioteca em cima e, embaixo, todas as ferramentas. Cada
+    ferramenta pede o PDF na hora: do computador (entra na biblioteca) ou um já no Prumo.
+    """
+
     def __init__(self, app):
         super().__init__(app)
         gear = CircleButton("gear", "Ajustes")
@@ -263,26 +317,37 @@ class HomeScreen(Screen):
         self.search = SearchField("Buscar nome ou texto")
         self.search.debounced.connect(lambda _t: self.refresh())
         self.content.addWidget(self.search)
-
-        self.grid = FlowGrid(max_cols=4)   # 8 cartões: 2 ou 4 colunas fecham as linhas
         self.tiles = {}
 
-        def add(key, title, icon, color, rounded=False, cb=None):
-            t = Tile(title, icon, color, rounded_icon=rounded)
+        self.grid = FlowGrid(max_cols=3)   # 6 cartões: 2 ou 3 colunas fecham as linhas
+        self.tools = FlowGrid(max_cols=4)  # 8 cartões: 2 ou 4 colunas
+
+        def add(grid, key, title, icon, color, rounded=False, cb=None, subtitle=None):
+            t = Tile(title, icon, color, subtitle=subtitle, rounded_icon=rounded)
             t.clicked.connect(cb)
             self.tiles[key] = t
-            self.grid.add(t)
+            grid.add(t)
 
-        add("scan", "Escanear", "scan", "yellow", True, app.scan)
-        add("import", "Importar", "import", "blue", True, lambda: app.import_dialog(""))
-        add("all", "Todos os PDFs", "docs", "red", False, lambda: app.push(DocumentGridScreen(app, list_id="all")))
-        add("recent", "Recentes", "clock", "gray", False, lambda: app.push(DocumentGridScreen(app, list_id="recent")))
-        add("pending", "Aguardando OCR", "textscan", "orange", True,
+        g = self.grid
+        add(g, "all", "Todos os PDFs", "docs", "red", False, lambda: app.push(DocumentGridScreen(app, list_id="all")))
+        add(g, "recent", "Recentes", "clock", "gray", False, lambda: app.push(DocumentGridScreen(app, list_id="recent")))
+        add(g, "pending", "Aguardando OCR", "textscan", "orange", True,
             lambda: app.push(DocumentGridScreen(app, list_id="pending")))
-        add("ocr", "Com OCR", "check", "green", False, lambda: app.push(DocumentGridScreen(app, list_id="ocr")))
-        add("favorites", "Favoritos", "star", "pink", True,
+        add(g, "ocr", "Com OCR", "check", "green", False, lambda: app.push(DocumentGridScreen(app, list_id="ocr")))
+        add(g, "favorites", "Favoritos", "star", "pink", True,
             lambda: app.push(DocumentGridScreen(app, list_id="favorites")))
-        add("merge", "Combinar PDFs", "stack", "purple", True, lambda: app.push(MergeScreen(app)))
+        add(g, "import", "Importar", "import", "blue", True, lambda: app.import_dialog(""))
+
+        t = self.tools
+        add(t, "read", "Ler", "book", "blue", False, lambda: self._tool("read"))
+        add(t, "do_ocr", "Fazer OCR", "textscan", "orange", True, lambda: self._tool("ocr"))
+        add(t, "organize", "Organizar páginas", "grid", "purple", True, lambda: self._tool("organize"))
+        add(t, "insert", "Incluir páginas", "plusrect", "teal", True, lambda: self._tool("insert"))
+        add(t, "remove", "Remover páginas", "minusrect", "red", True, lambda: self._tool("remove"))
+        add(t, "extract", "Extrair páginas", "docplus", "indigo", False, lambda: self._tool("extract"))
+        add(t, "split", "Dividir em partes", "scissors", "pink", False, lambda: self._tool("split"))
+        add(t, "merge", "Combinar PDFs", "stack", "purple", True, lambda: app.push(MergeScreen(app)))
+
         self.folders = WideTile("Pastas", "folder", "indigo")
         self.folders.clicked.connect(lambda: app.push(FoldersScreen(app)))
         self.home_box = QWidget()
@@ -291,6 +356,8 @@ class HomeScreen(Screen):
         hb.setSpacing(SPACING)
         hb.addWidget(self.grid)
         hb.addWidget(self.folders)
+        hb.addWidget(SectionTitle("Ferramentas"))
+        hb.addWidget(self.tools)
         self.content.addWidget(self.home_box)
         self.results_box = QWidget()
         self.results = QVBoxLayout(self.results_box)
@@ -299,6 +366,14 @@ class HomeScreen(Screen):
         self.content.addWidget(self.results_box)
         self.finish_content()
         self._last_query = None
+
+    TOOL_TITLES = {"read": "Ler qual PDF?", "ocr": "Fazer OCR de quais PDFs?",
+                   "organize": "Organizar qual PDF?", "insert": "Incluir páginas em qual PDF?",
+                   "remove": "Remover páginas de qual PDF?", "extract": "Extrair páginas de qual PDF?",
+                   "split": "Dividir qual PDF?"}
+
+    def _tool(self, key):
+        run_tool(self.app, key, self.TOOL_TITLES[key])
 
     def refresh(self):
         lib = self.app.lib
@@ -327,6 +402,36 @@ class HomeScreen(Screen):
                 for it in found:
                     g.add(make_doc_tile(self.app, it, show_folder=True))
                 self.results.addWidget(g)
+
+
+def run_tool(app, key, title):
+    """Escolhe o PDF (do computador ou da biblioteca) e abre a ferramenta pedida."""
+    multiple = key == "ocr"
+    picked = choose_documents(app, title, multiple=multiple, allow_import=True,
+                              only=(app.lib.needs_ocr_attention if key == "ocr" else None))
+    if not picked:
+        return
+    item = picked[0]
+    if key == "read":
+        app.read(item)
+    elif key == "ocr":
+        todo = [i for i in picked if app.lib.needs_ocr_attention(i)]
+        for i in todo:
+            app.start_ocr(i, quiet=len(todo) > 1)
+        if not todo:
+            app.toast("Esses PDFs já têm texto selecionável. O OCR não é necessário.")
+        elif len(todo) > 1:
+            app.toast(f"{len(todo)} PDFs na fila do OCR.")
+    elif key == "organize":
+        app.organize(item)
+    elif key == "insert":
+        include_pages_dialog(app, item)
+    elif key == "remove":
+        app.push(PagePickerScreen(app, item.id, "remove"))
+    elif key == "extract":
+        app.push(PagePickerScreen(app, item.id, "extract"))
+    elif key == "split":
+        split_dialog(app, item)
 
 
 # --- Listas e pastas ------------------------------------------------------------
@@ -444,9 +549,10 @@ class DocumentGridScreen(Screen):
             menu_action(sub, label, None, lambda k=key: self._set_sort(k), checked=self.sort == key)
         if self.folder is not None:
             m.addSeparator()
-            menu_action(m, "Importar para esta pasta", "import", lambda: self.app.import_dialog(self.folder))
+            menu_action(m, "Adicionar PDFs…", "plus", lambda: add_pdfs_to_folder(self.app, self.folder))
+            menu_action(m, "Importar do computador…", "import", lambda: self.app.import_dialog(self.folder))
             if self.folder:
-                menu_action(m, "Nova subpasta", "folderplus", lambda: create_folder(self.app, self.folder))
+                menu_action(m, "Nova subpasta", "folderplus", lambda: new_folder_flow(self.app, self.folder))
             menu_action(m, "Mostrar no Explorador", "explorer",
                         lambda: self.app.reveal(self.app.lib.folder_path(self.folder)))
         m.exec(self.more.mapToGlobal(self.more.rect().bottomLeft()))
@@ -519,6 +625,11 @@ class DocumentGridScreen(Screen):
                          "Um arquivo por vez; cada um gera uma cópia com “OCR” no nome")
             w.clicked.connect(lambda: [app.start_ocr(i, quiet=True) for i in self.docs()])
             self.content.addWidget(w)
+        if self.folder is not None and not q and not self.selecting:
+            add = WideTile("Adicionar PDFs", "plus", "blue",
+                           subtitle="Do computador ou de outra parte do Prumo (outra pasta, Todos os PDFs…)")
+            add.clicked.connect(lambda: add_pdfs_to_folder(app, self.folder))
+            self.content.addWidget(add)
         subs = lib.subfolders(self.folder) if self.folder and not q else []
         if subs:
             g = FlowGrid()
@@ -548,7 +659,7 @@ class DocumentGridScreen(Screen):
             return EmptyState("search", "Nada encontrado", "Tente outro termo.")
         texts = {
             "pending": ("seal", "Nada aguardando OCR", "PDFs escaneados ou em imagem aparecem aqui até você fazer o OCR."),
-            "favorites": ("star", "Nenhum favorito", "Abra um PDF e clique em “Favoritar”."),
+            "favorites": ("star", "Nenhum favorito", "Clique na estrela de um PDF para ele aparecer aqui."),
             "ocr": ("textscan", "Nenhum PDF com OCR", "Os arquivos criados pelo OCR aparecem aqui."),
             "recent": ("clock", "Nada recente", "Os PDFs abertos ou alterados nos últimos 7 dias aparecem aqui."),
         }
@@ -556,7 +667,7 @@ class DocumentGridScreen(Screen):
             return EmptyState(*texts[self.list_id])
         if self.folder is not None:
             return EmptyState("folder_line", "Pasta vazia",
-                              "Arraste PDFs para esta janela ou use o menu ⋯ para importar.")
+                              "Use “Adicionar PDFs”, acima, ou arraste PDFs para esta janela.")
         return EmptyState("docs", "Nenhum PDF", "Importe PDFs pela tela inicial ou arraste-os para esta janela.")
 
 
@@ -582,7 +693,7 @@ class FoldersScreen(Screen):
                 g.add(make_folder_tile(app, f))
             self.content.addWidget(g)
         new = WideTile("Nova pasta", "folderplus", "blue")
-        new.clicked.connect(lambda: create_folder(app))
+        new.clicked.connect(lambda: new_folder_flow(app))
         self.content.addWidget(new)
         note = Label(f"As pastas são pastas comuns do Windows, em {lib.root}. "
                      "Clique com o botão direito numa pasta para renomear, excluir ou abrir no Explorador.",
@@ -715,10 +826,10 @@ class DocumentScreen(Screen):
              subtitle="Copiar, exportar, Explorador")
         tile("OCR", "textscan", "orange", lambda: self._ocr(item), count=self._ocr_count(item),
              subtitle=self._ocr_subtitle(item, busy), rounded=True)
-        tile("Organizar páginas", "grid", "purple", lambda: app.coming_soon("Organizar páginas"),
-             count=str(pages) if pages else None, subtitle="Na próxima etapa", rounded=True, dimmed=True)
-        tile("Incluir páginas", "plusrect", "teal", lambda: app.coming_soon("Incluir páginas"),
-             subtitle="Na próxima etapa", rounded=True, dimmed=True)
+        tile("Organizar páginas", "grid", "purple", lambda: app.organize(item),
+             count=str(pages) if pages else None, subtitle="Arrastar, girar, excluir", rounded=True)
+        tile("Incluir páginas", "plusrect", "teal", lambda: include_pages_dialog(app, item),
+             subtitle="De outro PDF ou do computador", rounded=True)
         tile("Remover páginas", "minusrect", "red", lambda: app.push(PagePickerScreen(app, item.id, "remove")),
              rounded=True)
         tile("Dividir em partes", "scissors", "pink", lambda: split_dialog(app, item))
@@ -892,6 +1003,95 @@ def split_dialog(app, item):
         folder = item.folder
         app.toast(f"{len(created)} arquivos criados em {item.folder_name}.", "Ver",
                   lambda: app.push(DocumentGridScreen(app, folder=folder)))
+
+
+# --- Incluir páginas -------------------------------------------------------------
+
+def include_pages_dialog(app, item, source=None):
+    """Inclui páginas de outro PDF (ou do próprio) em `item`: todas, ou trechos como 5-15."""
+    target_total = item.page_count or pdfops.page_count(item.path)
+    if source is None:
+        picked = choose_documents(app, f"Incluir páginas em “{item.name}”: de qual PDF?",
+                                  allow_import=True, import_folder=item.folder)
+        if not picked:
+            return False
+        source = picked[0]
+    src_total = source.page_count or pdfops.page_count(source.path)
+    ov = SheetOverlay(app, 460)
+    sheet_header(ov, "Incluir páginas")
+    card = TileCard()
+    card.lay.setSpacing(8)
+    same = source.id == item.id
+    card.lay.addWidget(Label(f"De: “{source.name}”{' (este mesmo PDF)' if same else ''} · {pages_text(src_total)}",
+                             14, 600))
+    card.lay.addWidget(Label("Quais páginas? Deixe em branco para incluir todas, ou digite, por exemplo: "
+                             "3, 5-15, 20-fim", 13, 400, "secondary"))
+    field = QLineEdit()
+    field.setPlaceholderText(f"Todas (1-{src_total})")
+    card.lay.addWidget(field)
+    info = Label("", 13, 500, "teal")
+    card.lay.addWidget(info)
+    card.lay.addSpacing(6)
+    card.lay.addWidget(Label(f"Onde, em “{item.name}” ({pages_text(target_total)})?", 14, 600))
+    where = QComboBox()
+    where.addItem("No fim", "end")
+    where.addItem("No início", "start")
+    where.addItem("Depois da página…", "after")
+    card.lay.addWidget(where)
+    after = QSpinBox()
+    after.setRange(1, max(1, target_total))
+    after.setValue(max(1, target_total))
+    after.setPrefix("Depois da página ")
+    after.hide()
+    card.lay.addWidget(after)
+    wrap = QVBoxLayout()
+    wrap.setContentsMargins(16, 4, 16, 16)
+    wrap.setSpacing(12)
+    wrap.addWidget(card)
+    btn = PrimaryButton("Incluir", "teal")
+    wrap.addWidget(btn)
+    wrap.addWidget(Label("Dá para voltar atrás com “Desfazer última alteração”, na tela do PDF.",
+                         13, 400, "secondary"))
+    ov.lay.addLayout(wrap)
+    ov.focus_widget = field
+    state = {"pages": list(range(1, src_total + 1))}
+
+    def update():
+        t = field.text().strip()
+        try:
+            state["pages"] = (list(range(1, src_total + 1)) if not t
+                              else pdfops.parse_page_selection(t, src_total))
+            info.role = "teal"
+            info._apply()
+            n = len(state["pages"])
+            info.setText(f"{pages_text(n)} {'será incluída' if n == 1 else 'serão incluídas'}.")
+            btn.setEnabled(n > 0)
+        except ValueError as exc:
+            state["pages"] = []
+            info.role = "red"
+            info._apply()
+            info.setText(str(exc))
+            btn.setEnabled(False)
+        after.setVisible(where.currentData() == "after")
+        btn.set_title(f"Incluir {pages_text(len(state['pages']))}" if state["pages"] else "Incluir")
+        ov._place()
+
+    field.textChanged.connect(update)
+    where.currentIndexChanged.connect(lambda _i: update())
+    btn.clicked.connect(lambda: ov.done(True))
+    field.returnPressed.connect(lambda: btn.isEnabled() and ov.done(True))
+    update()
+    if not ov.run():
+        return False
+    mode = where.currentData()
+    at = 1 if mode == "start" else (target_total + 1 if mode == "end" else after.value() + 1)
+    pages = state["pages"]
+    src_path = source.path
+    if app.attempt(lambda: app.lib.modify(item, lambda p: pdfops.insert(p, src_path, pages, at)), busy="Incluindo…"):
+        n = len(pages)
+        app.toast(f"{pages_text(n)} incluída{'s' if n != 1 else ''} em {item.name}. Use “Desfazer” se precisar.")
+        return True
+    return False
 
 
 # --- Escolher páginas (remover, extrair) --------------------------------------
@@ -1191,7 +1391,8 @@ class MergeScreen(Screen):
         self.refresh()
 
     def _choose(self):
-        picked = choose_documents(self.app, "Escolher PDFs", multiple=True, excluding=set(self.chosen))
+        picked = choose_documents(self.app, "Escolher PDFs", multiple=True, excluding=set(self.chosen),
+                                  allow_import=True)
         if picked:
             self.chosen.extend(i.id for i in picked)
             self.refresh()
@@ -1217,20 +1418,53 @@ class MergeScreen(Screen):
                 self.app.toast(f"PDF combinado: {new.name}", "Abrir", lambda: self.app.open_document(new.id))
 
 
-def choose_documents(app, title, multiple=False, excluding=frozenset()):
-    """Escolha de PDFs da biblioteca (um ou vários)."""
-    ov = SheetOverlay(app, 640)
+def _origins(app, exclude_folder=None):
+    """Origens do seletor: as abas da tela inicial e as pastas."""
+    out = [("Todos os PDFs", ("list", "all")), ("Recentes", ("list", "recent")),
+           ("Favoritos", ("list", "favorites")), ("Com OCR", ("list", "ocr")),
+           ("Aguardando OCR", ("list", "pending"))]
+    if exclude_folder != "":
+        out.append(("Sem pasta", ("folder", "")))
+    for f in app.lib.folders:
+        if f.path != exclude_folder:
+            out.append(("    " * f.path.count("/") + "Pasta " + f.name, ("folder", f.path)))
+    return out
+
+
+def choose_documents(app, title, multiple=False, excluding=frozenset(), allow_import=False,
+                     import_folder: str = "", exclude_folder: str | None = None, only=None):
+    """
+    Escolha de PDFs: da biblioteca (filtrando por aba ou pasta) ou, com `allow_import`,
+    do computador, que entram na biblioteca em `import_folder`. Devolve a lista ou None.
+    """
+    ov = SheetOverlay(app, 680)
     ok = sheet_header(ov, title, confirm="Adicionar" if multiple else None)
     selected: list[str] = []
     wrap = QVBoxLayout()
     wrap.setContentsMargins(16, 0, 16, 16)
     wrap.setSpacing(10)
+    if allow_import:
+        comp = WideTile("Do computador…", "computer", "blue",
+                        subtitle="Escolher no Windows (Documentos, Downloads, pendrive, OneDrive…)")
+        comp.clicked.connect(lambda: ov.done("import"))
+        wrap.addWidget(comp)
+        wrap.addWidget(SectionTitle("Ou escolha no Prumo"))
+    row = QHBoxLayout()
+    row.setSpacing(8)
     search = SearchField("Buscar PDF")
-    wrap.addWidget(search)
+    row.addWidget(search, 1)
+    origin = QComboBox()
+    origin.setMinimumWidth(190)
+    origin.setFixedHeight(40)
+    for label, data in _origins(app, exclude_folder):
+        origin.addItem(label, data)
+    row.addWidget(origin)
+    wrap.addLayout(row)
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QScrollArea.NoFrame)
-    scroll.setMinimumHeight(min(560, int(app.height() * 0.7)))
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll.setMinimumHeight(min(520, int(app.height() * 0.62) - (90 if allow_import else 0)))
     body = QWidget()
     body.setStyleSheet("background: transparent;")
     col = QVBoxLayout(body)
@@ -1245,6 +1479,17 @@ def choose_documents(app, title, multiple=False, excluding=frozenset()):
             ok.setText(f"Adicionar ({len(selected)})" if selected else "Adicionar")
             ok.setEnabled(bool(selected))
 
+    def pool():
+        kind, key = origin.currentData()
+        lib = app.lib
+        base = lib.items_for(key) if kind == "list" else lib.items_in_folder(key)
+        out = [i for i in base if i.id not in excluding]
+        if exclude_folder is not None:
+            out = [i for i in out if i.folder != exclude_folder]
+        if only is not None:
+            out = [i for i in out if only(i)]
+        return out
+
     def build():
         while col.count():
             w = col.takeAt(0).widget()
@@ -1252,11 +1497,13 @@ def choose_documents(app, title, multiple=False, excluding=frozenset()):
                 w.setParent(None)
                 w.deleteLater()
         tiles.clear()
-        pool = [i for i in app.lib.items if i.id not in excluding]
+        items = pool()
         q = search.text().strip()
-        docs = app.lib.search(q, pool) if q else sorted(pool, key=lambda i: -i.modified)
+        docs = app.lib.search(q, items) if q else sorted(items, key=lambda i: -i.modified)
         if not docs:
-            col.addWidget(EmptyState("docs", "Nenhum PDF", "Não há outros PDFs na biblioteca."))
+            msg = ("Use “Do computador…” para escolher um arquivo do Windows." if allow_import
+                   else "Não há outros PDFs aqui.")
+            col.addWidget(EmptyState("docs", "Nenhum PDF aqui", msg))
         else:
             g = FlowGrid(min_col=180, max_cols=3)
             for it in docs:
@@ -1281,12 +1528,16 @@ def choose_documents(app, title, multiple=False, excluding=frozenset()):
         update_ok()
 
     search.debounced.connect(lambda _t: build())
+    origin.currentIndexChanged.connect(lambda _i: build())
     if ok is not None:
         ok.clicked.connect(lambda: ov.done([app.lib.item(x) for x in selected if app.lib.item(x)]))
     build()
     update_ok()
     ov.focus_widget = search.edit
-    return ov.run()
+    res = ov.run()
+    if res == "import":
+        return app.pick_and_import(import_folder, multiple) or None
+    return res
 
 
 # --- Ajustes ----------------------------------------------------------------------

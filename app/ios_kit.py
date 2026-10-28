@@ -258,20 +258,110 @@ class Thumb:
 
 
 class DocTile(TileBase):
-    """Cartão de PDF: miniatura, número de páginas, nome e selos."""
+    """
+    Cartão de PDF: miniatura, número de páginas, nome e selos. No canto inferior direito,
+    a estrela de favorito (vazia ou preenchida) e os três pontos que abrem as opções.
+    """
 
-    def __init__(self, item, thumbs, needs_ocr=False, show_folder=False, parent=None):
+    star_clicked = Signal()
+    menu_clicked = Signal()
+
+    ACTION_ROW = 30
+
+    def __init__(self, item, thumbs, needs_ocr=False, show_folder=False, show_actions=True, parent=None):
         super().__init__("blue", parent)
         self.item, self.needs_ocr, self.show_folder = item, needs_ocr, show_folder
+        self.show_actions = show_actions
         self.selection: bool | None = None
         self.busy = False
         self.thumb = Thumb(self, thumbs)
+        self._hover: str | None = None
+        self._press: str | None = None
+        self.setMouseTracking(True)
         self.setAccessibleName(item.name)
 
     def set_selection(self, value: bool | None):
         self.selection = value
         self.selected = bool(value)
         self.update()
+
+    # --- estrela e três pontos ---
+    def actions_visible(self) -> bool:
+        return self.show_actions and self.selection is None
+
+    def star_rect(self) -> QRectF:
+        return QRectF(self.width() - 70, self.height() - 8 - self.ACTION_ROW, 32, self.ACTION_ROW)
+
+    def dots_rect(self) -> QRectF:
+        return QRectF(self.width() - 38, self.height() - 8 - self.ACTION_ROW, 30, self.ACTION_ROW)
+
+    def _target(self, pos) -> str | None:
+        if not self.actions_visible():
+            return None
+        pt = QPointF(pos)
+        if self.star_rect().contains(pt):
+            return "star"
+        if self.dots_rect().contains(pt):
+            return "dots"
+        return None
+
+    def mousePressEvent(self, e):
+        t = self._target(e.position()) if e.button() == Qt.LeftButton else None
+        if t:
+            self._press = t
+            self.update()
+            e.accept()
+            return
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self._press:
+            t, self._press = self._press, None
+            self.update()
+            if self._target(e.position()) == t:
+                (self.star_clicked if t == "star" else self.menu_clicked).emit()
+            e.accept()
+            return
+        super().mouseReleaseEvent(e)
+
+    def mouseMoveEvent(self, e):
+        t = self._target(e.position())
+        if t != self._hover:
+            self._hover = t
+            self.setToolTip({"star": "Remover dos favoritos" if self.item.meta.favorite else "Favoritar",
+                             "dots": "Opções"}.get(t, ""))
+            self.update()
+        super().mouseMoveEvent(e)
+
+    def leaveEvent(self, e):
+        self._hover = None
+        self.update()
+        super().leaveEvent(e)
+
+    def _paint_actions(self, p: QPainter):
+        light = self.highlighted()
+        for key, r in (("star", self.star_rect()), ("dots", self.dots_rect())):
+            if self._hover == key or self._press == key:
+                c = QColor(255, 255, 255, 60) if light else QColor(T.color("text"))
+                if not light:
+                    c.setAlpha(40 if self._press == key else 22)
+                p.setPen(Qt.NoPen)
+                p.setBrush(c)
+                p.drawRoundedRect(r.adjusted(2, 1, -2, -1), 8, 8)
+        sr = self.star_rect()
+        icon = QRectF(sr.center().x() - 10, sr.center().y() - 10, 20, 20)
+        fav = self.item.meta.favorite
+        if fav:
+            paint_glyph(p, icon, "star", QColor("white") if light else T.color("yellow"), 1.2)
+        else:
+            paint_glyph(p, icon, "star_line", QColor("white") if light else T.color("secondary"), 1.6)
+        dr = self.dots_rect()
+        c = QColor("white") if light else T.color("secondary")
+        p.setPen(Qt.NoPen)
+        p.setBrush(c)
+        cx = dr.center().x()
+        for dy in (-6, 0, 6):
+            p.drawEllipse(QPointF(cx, dr.center().y() + dy), 2.0, 2.0)
 
     def _badges(self):
         m = self.item.meta
@@ -284,12 +374,11 @@ class DocTile(TileBase):
             out.append(("Sem OCR", "orange"))
         return out
 
-    def _has_badge_row(self):
-        return bool(self._badges() or self.item.meta.favorite or self.show_folder)
-
     def heightForWidth(self, w):
+        # A linha de baixo (selos à esquerda, estrela e três pontos à direita) existe sempre,
+        # para todos os cartões terem a mesma altura e a estrela ficar sempre no mesmo lugar.
         lines = wrap_lines(self.item.name, font(15, 600), w - 24, 2)
-        h = 12 + 44 + 8 + 19 * len(lines) + (19 if self._has_badge_row() else 0) + 12
+        h = 12 + 44 + 8 + 19 * len(lines) + 4 + self.ACTION_ROW + 8
         return max(DOC_TILE_HEIGHT, h)
 
     def sizeHint(self):
@@ -323,24 +412,29 @@ class DocTile(TileBase):
         else:
             p.setPen(QPen(self.secondary_color(), 2))
             p.drawArc(QRectF(w - 30, 16, 16, 16), 90 * 16, 270 * 16)
-        # nome e selos, de baixo para cima
-        y_bottom = h - 12
-        if self._has_badge_row():
-            x = 12.0
-            yb = y_bottom - 15
-            if self.item.meta.favorite:
-                paint_glyph(p, QRectF(x - 1, yb + 1, 13, 13), "star",
-                            QColor("white") if self.highlighted() else T.color("yellow"), 1.2)
-                x += 15
-            for text, color in self._badges():
-                x += paint_badge(p, x, yb, text, T.color(color), self.highlighted()) + 4
-            if self.show_folder:
-                f = font(10.5, 500)
-                p.setFont(f)
-                p.setPen(self.secondary_color())
-                p.drawText(QRectF(x, yb, w - 12 - x, 15), Qt.AlignLeft | Qt.AlignVCenter,
-                           elide(self.item.folder_name, f, int(w - 12 - x)))
-            y_bottom -= 19
+        # linha de baixo: selos e pasta à esquerda; estrela e três pontos à direita
+        row_top = h - 8 - self.ACTION_ROW
+        limit = w - (74 if self.actions_visible() else 12)
+        x = 12.0
+        yb = row_top + (self.ACTION_ROW - 15) / 2
+        if not self.actions_visible() and self.item.meta.favorite:
+            paint_glyph(p, QRectF(x - 1, yb + 1, 13, 13), "star",
+                        QColor("white") if self.highlighted() else T.color("yellow"), 1.2)
+            x += 15
+        for text, color in self._badges():
+            bw = QFontMetrics(font(10, 700)).horizontalAdvance(text) + 10
+            if x + bw > limit:
+                break
+            x += paint_badge(p, x, yb, text, T.color(color), self.highlighted()) + 4
+        if self.show_folder and limit - x > 24:
+            f = font(10.5, 500)
+            p.setFont(f)
+            p.setPen(self.secondary_color())
+            p.drawText(QRectF(x, yb, limit - x, 15), Qt.AlignLeft | Qt.AlignVCenter,
+                       elide(self.item.folder_name, f, int(limit - x)))
+        if self.actions_visible():
+            self._paint_actions(p)
+        y_bottom = row_top - 4
         f = font(15, 600)
         lines = wrap_lines(self.item.name, f, w - 24, 2)
         p.setFont(f)
@@ -421,28 +515,55 @@ class PrimaryButton(QAbstractButton):
 
 
 class EmptyState(QWidget):
+    """
+    Ícone, título e mensagem centralizados. A mensagem é desenhada aqui mesmo, com a
+    altura calculada para a largura disponível: um QLabel com quebra de linha dentro de
+    um layout com alinhamento recebia a altura de uma linha só e ficava "esmagado".
+    """
+
+    MAX_TEXT = 440
+
     def __init__(self, icon: str, title: str, message: str):
         super().__init__()
-        self.icon = icon
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 40, 24, 24)
-        lay.setSpacing(6)
-        self.pic = QLabel()
-        self.pic.setAlignment(Qt.AlignCenter)
-        self.pic.setFixedHeight(52)
-        t = Label(title, 20, 700)
-        t.setAlignment(Qt.AlignCenter)
-        m = Label(message, 14, 400, "secondary")
-        m.setAlignment(Qt.AlignCenter)
-        m.setMaximumWidth(420)
-        lay.addWidget(self.pic)
-        lay.addWidget(t)
-        lay.addWidget(m, 0, Qt.AlignHCenter)
-        self._apply()
-        T.changed.connect(self._apply)
+        self.icon, self.title, self.message = icon, title, message
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        T.changed.connect(self.update)
 
-    def _apply(self):
-        self.pic.setPixmap(glyph_icon(self.icon, T.color("placeholder"), 44).pixmap(44, 44))
+    def _text_width(self, w: int) -> int:
+        return max(120, min(self.MAX_TEXT, w - 48))
+
+    def _lines(self, w: int) -> list[str]:
+        return wrap_lines(self.message, font(14), self._text_width(w), 8) if self.message else []
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, w):
+        return 40 + 52 + 6 + 28 + 6 + 20 * len(self._lines(w)) + 24
+
+    def sizeHint(self):
+        return QSize(400, self.heightForWidth(max(400, self.width())))
+
+    def resizeEvent(self, e):
+        self.setFixedHeight(self.heightForWidth(self.width()))
+        super().resizeEvent(e)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w = self.width()
+        paint_glyph(p, QRectF((w - 44) / 2, 44, 44, 44), self.icon, T.color("placeholder"), 1.9)
+        y = 40 + 52 + 6
+        p.setPen(T.color("text"))
+        p.setFont(font(20, 700))
+        p.drawText(QRectF(0, y, w, 28), Qt.AlignCenter, self.title)
+        y += 28 + 6
+        p.setPen(T.color("secondary"))
+        p.setFont(font(14))
+        tw = self._text_width(w)
+        for line in self._lines(w):
+            p.drawText(QRectF((w - tw) / 2, y, tw, 20), Qt.AlignCenter, line)
+            y += 20
 
 
 # --- Grade adaptável ----------------------------------------------------------
