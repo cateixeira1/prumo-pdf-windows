@@ -332,7 +332,7 @@ class MainWindow(QMainWindow):
         try:
             res = self.run_with_progress(title, lambda progress: convert.convert(
                 paths, combine_images=combine, combined_name=name, work_dir=self.lib.temp_path().with_suffix(""),
-                progress=progress))
+                progress=progress, dewarp_photos=bool(self.setting("dewarp_photos", False))))
         except Exception as exc:  # noqa: BLE001
             self.show_error(f"{type(exc).__name__}: {exc}")
             return []

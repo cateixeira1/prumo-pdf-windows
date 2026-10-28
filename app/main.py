@@ -204,7 +204,10 @@ def _is_primary() -> bool:
 
 
 def _send_to_running(message: dict) -> bool:
-    """Se o Prumo já está aberto, entrega os arquivos para ele (uma janela só) e devolve True."""
+    """
+    Se o Prumo já está aberto, entrega os arquivos para ele (uma janela só) e devolve True.
+    Espera a confirmação ("ok") da janela aberta antes de desconectar, para nada se perder.
+    """
     import json
 
     from PySide6.QtNetwork import QLocalSocket
@@ -214,9 +217,19 @@ def _send_to_running(message: dict) -> bool:
         return False
     sock.write(json.dumps(message).encode("utf-8") + b"\n")   # a quebra de linha marca o fim da mensagem
     sock.flush()
-    sock.waitForBytesWritten(2000)
+    written = sock.waitForBytesWritten(2000) or sock.bytesToWrite() == 0
+    reply = bytearray()
+    for _ in range(8):                                       # espera a confirmação por até ~1,6 s
+        if sock.waitForReadyRead(200):
+            reply.extend(bytes(sock.readAll()))
+            if b"\n" in reply:
+                break
+        elif sock.state() != QLocalSocket.ConnectedState:
+            break
     sock.disconnectFromServer()
-    return True
+    if sock.state() != QLocalSocket.UnconnectedState:
+        sock.waitForDisconnected(500)
+    return reply.strip() == b"ok" or written
 
 
 def start_instance_server(window, delay_ms: int = 700):
@@ -250,35 +263,28 @@ def start_instance_server(window, delay_ms: int = 700):
     timer.timeout.connect(flush)
 
     def on_connection():
-        from PySide6.QtNetwork import QLocalSocket
+        import time
         while server.hasPendingConnections():
             conn = server.nextPendingConnection()
-            state = {"buf": bytearray(), "done": False}
-
-            def finish(conn=conn, state=state):
-                if state["done"]:
-                    return
-                state["done"] = True
-                try:
-                    msg = json.loads(bytes(state["buf"]).decode("utf-8").strip() or "{}")
-                except ValueError:
-                    msg = {}
-                pending["open"].extend(msg.get("open", []))
-                pending["convert"].extend(msg.get("convert", []))
-                timer.start()
-                conn.deleteLater()
-
-            def read(conn=conn, state=state):
-                state["buf"].extend(bytes(conn.readAll()))
-                if state["buf"].endswith(b"\n"):
-                    finish()
-
-            conn.readyRead.connect(read)
-            conn.disconnected.connect(lambda read=read, finish=finish: (read(), finish()))
-            # No Windows a mensagem pode ter chegado (e a conexão fechado) antes destes avisos existirem.
-            read()
-            if conn.state() == QLocalSocket.UnconnectedState:
-                finish()
+            buf = bytearray(bytes(conn.readAll()))
+            # A mensagem é pequena e chega logo depois da conexão: espera por ela (no máximo 2 s)
+            # em vez de depender do aviso de "dados chegaram", que no Windows pode se perder.
+            end = time.monotonic() + 2.0
+            while not buf.endswith(b"\n") and time.monotonic() < end:
+                if conn.waitForReadyRead(100):
+                    buf.extend(bytes(conn.readAll()))
+            try:
+                msg = json.loads(bytes(buf).decode("utf-8").strip() or "{}")
+            except ValueError:
+                msg = {}
+            if buf.endswith(b"\n"):
+                conn.write(b"ok\n")                       # confirma: o outro processo já pode sair
+                conn.flush()
+                conn.waitForBytesWritten(1000)
+            conn.disconnected.connect(conn.deleteLater)
+            pending["open"].extend(msg.get("open", []))
+            pending["convert"].extend(msg.get("convert", []))
+            timer.start()
     server.newConnection.connect(on_connection)
     return server
 
@@ -377,8 +383,10 @@ def self_test(report_file: str) -> int:
             result["heic"] = repr(exc)
         from ios_theme import _icon_file
         result["icon"] = str(_icon_file()) if _icon_file() else None
+        import dewarp
+        result["dewarp"] = dewarp.available()
         result["version"] = core.APP_VERSION
-        result["ok"] = bool(result["tessdata"]) and bool(result["icon"]) and result["heic"] is True
+        result["ok"] = bool(result["tessdata"]) and bool(result["icon"]) and result["heic"] is True and result["dewarp"]
     except Exception as exc:
         result["ok"] = False
         result["error"] = repr(exc)

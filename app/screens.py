@@ -838,6 +838,8 @@ class DocumentScreen(Screen):
         tile("Remover páginas", "minusrect", "red", lambda: app.push(PagePickerScreen(app, item.id, "remove")),
              rounded=True)
         tile("Dividir em partes", "scissors", "pink", lambda: split_dialog(app, item))
+        tile("Corrigir páginas curvas", "curve", "teal", lambda: dewarp_dialog(app, item),
+             subtitle="Fotos de livros, papel ondulado", rounded=True)
         tile("Extrair páginas", "docplus", "indigo", lambda: app.push(PagePickerScreen(app, item.id, "extract")))
         tile("Renomear", "pencil", "gray", lambda: app.actions.rename(item))
         tile("Mover", "folder", "brown", lambda: app.actions.move([item]), subtitle=item.folder_name)
@@ -1097,6 +1099,160 @@ def include_pages_dialog(app, item, source=None):
         app.toast(f"{pages_text(n)} incluída{'s' if n != 1 else ''} em {item.name}. Use “Desfazer” se precisar.")
         return True
     return False
+
+
+# --- Corrigir páginas curvas ----------------------------------------------------------
+
+class _Preview(QWidget):
+    """Página antes e depois da correção, lado a lado."""
+
+    def __init__(self):
+        super().__init__()
+        self.before = self.after = None
+        self.message = "Preparando a prévia…"
+        self.setMinimumHeight(340)
+        T.changed.connect(self.update)
+
+    def set_images(self, before, after, message=""):
+        from PIL.ImageQt import ImageQt
+        from PySide6.QtGui import QImage
+        self.before = QImage(ImageQt(before)).copy() if before is not None else None
+        self.after = QImage(ImageQt(after)).copy() if after is not None else None
+        self.message = message
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        w, h = self.width(), self.height()
+        col = (w - 16) / 2
+        for k, (img, label) in enumerate(((self.before, "Antes"), (self.after, "Depois"))):
+            area = QRectF(k * (col + 16), 22, col, h - 22)
+            p.setPen(T.color("secondary"))
+            p.setFont(font(12.5, 600))
+            p.drawText(QRectF(area.x(), 0, col, 18), Qt.AlignCenter, label)
+            if img is None or img.isNull():
+                p.setPen(T.color("secondary"))
+                p.drawText(area, Qt.AlignCenter | Qt.TextWordWrap, self.message)
+                continue
+            s = min(area.width() / img.width(), area.height() / img.height())
+            tw, th = img.width() * s, img.height() * s
+            target = QRectF(area.x() + (area.width() - tw) / 2, area.y() + (area.height() - th) / 2, tw, th)
+            p.drawImage(target, img)
+            p.setPen(QPen(T.color("thumb_border"), 0.8))
+            p.setBrush(Qt.NoBrush)
+            p.drawRect(target)
+
+
+def dewarp_dialog(app, item):
+    """Corrigir páginas curvas (lombada, papel ondulado): prévia, escolha das páginas e cópia corrigida."""
+    import dewarp
+    if not dewarp.available():
+        app.show_error("A correção de curvatura não está disponível nesta instalação (faltam os arquivos do modelo).")
+        return
+    total = item.page_count or pdfops.page_count(item.path)
+    ov = SheetOverlay(app, 640)
+    sheet_header(ov, "Corrigir páginas curvas")
+    card = TileCard()
+    card.lay.setSpacing(8)
+    card.lay.addWidget(Label("Para fotos de livros e revistas (página curvada perto da lombada), papel ondulado ou "
+                             "dobrado. O texto fica reto, o que também melhora o OCR. Em páginas que já estão retas "
+                             "(scanner de mesa), não use: a margem pode ser cortada.", 13, 400, "secondary"))
+    preview = _Preview()
+    card.lay.addWidget(preview)
+    nav = QHBoxLayout()
+    prev_b, next_b = QPushButton("‹ Página anterior"), QPushButton("Próxima página ›")
+    page_label = Label("", 13, 600, wrap=False)
+    for b in (prev_b, next_b):
+        b.setCursor(Qt.PointingHandCursor)
+        b.setFont(font(13, 600))
+        b.setStyleSheet(f"QPushButton {{ background: {T.hex('search')}; border: none; border-radius: 8px; "
+                        f"padding: 6px 12px; color: {T.color('blue').name()}; }}"
+                        f"QPushButton:disabled {{ color: {T.hex('placeholder')}; }}")
+    nav.addWidget(prev_b)
+    nav.addStretch(1)
+    nav.addWidget(page_label)
+    nav.addStretch(1)
+    nav.addWidget(next_b)
+    card.lay.addLayout(nav)
+    card.lay.addWidget(Label("Quais páginas corrigir? Deixe em branco para todas, ou digite, por exemplo: 1, 3-5",
+                             13, 400, "secondary"))
+    field = QLineEdit()
+    field.setPlaceholderText(f"Todas (1-{total})")
+    card.lay.addWidget(field)
+    info = Label("", 13, 500, "teal")
+    card.lay.addWidget(info)
+    wrap = QVBoxLayout()
+    wrap.setContentsMargins(16, 4, 16, 16)
+    wrap.setSpacing(12)
+    wrap.addWidget(card)
+    btn = PrimaryButton("Corrigir e criar cópia", "teal")
+    wrap.addWidget(btn)
+    wrap.addWidget(Label("O original não muda: o resultado é um PDF novo, com “- corrigido” no nome. "
+                         "As páginas corrigidas viram imagem; depois, o app oferece o OCR.", 13, 400, "secondary"))
+    ov.lay.addLayout(wrap)
+    state = {"page": 1, "pages": list(range(1, total + 1))}
+
+    def show_page():
+        n = state["page"]
+        page_label.setText(f"Prévia da página {n} de {total}")
+        prev_b.setEnabled(n > 1)
+        next_b.setEnabled(n < total)
+        preview.set_images(None, None, "Preparando a prévia…")
+        QApplication.processEvents()
+        try:
+            pil, _size = dewarp.render_page(item.path, n - 1, dpi=110)
+            preview.set_images(pil, dewarp.unwarp(pil))
+        except Exception as exc:  # noqa: BLE001
+            preview.set_images(None, None, f"Não foi possível gerar a prévia: {exc}")
+
+    def update():
+        t = field.text().strip()
+        try:
+            state["pages"] = list(range(1, total + 1)) if not t else pdfops.parse_page_selection(t, total)
+            info.role = "teal"
+            info._apply()
+            n = len(state["pages"])
+            info.setText("Todas as páginas serão corrigidas." if not t else
+                         f"{pages_text(n)} {'será corrigida' if n == 1 else 'serão corrigidas'}.")
+            btn.setEnabled(n > 0)
+        except ValueError as exc:
+            state["pages"] = []
+            info.role = "red"
+            info._apply()
+            info.setText(str(exc))
+            btn.setEnabled(False)
+
+    prev_b.clicked.connect(lambda: (state.__setitem__("page", state["page"] - 1), show_page()))
+    next_b.clicked.connect(lambda: (state.__setitem__("page", state["page"] + 1), show_page()))
+    field.textChanged.connect(update)
+    btn.clicked.connect(lambda: ov.done(True))
+    update()
+    from PySide6.QtCore import QTimer
+    QTimer.singleShot(50, show_page)
+    if not ov.run():
+        return
+    pages = state["pages"]
+    lib = app.lib
+    tmp = lib.temp_path()
+    try:
+        fixed = app.run_with_progress("Corrigindo as páginas…",
+                                      lambda progress: dewarp.dewarp_pdf(item.path, tmp, pages, progress))
+        new = lib.adopt(tmp, f"{item.name} - corrigido", item.folder)
+    except Exception as exc:  # noqa: BLE001
+        tmp.unlink(missing_ok=True)
+        app.show_error(f"Não foi possível corrigir: {exc}")
+        return
+    idx = alert(app, "Usar OCR agora?",
+                f"{pages_text(fixed)} {'corrigida' if fixed == 1 else 'corrigidas'} em “{new.name}”. "
+                "Com o texto reto, o OCR reconhece melhor. Fazer o OCR do PDF corrigido agora?",
+                [("Mais tarde", "cancel"), ("Sim", "default")])
+    if idx == 1:
+        app.start_ocr(new)
+    else:
+        lib.set_pending_ocr(new, True)
+    app.open_document(new.id)
 
 
 # --- Escolher páginas (remover, extrair) --------------------------------------
@@ -1665,6 +1821,19 @@ class SettingsScreen(Screen):
             "O OCR usa o Tesseract e roda inteiramente neste computador. Páginas com baixa confiança são "
             "marcadas para revisão; mesmo assim, confira nomes, datas, números e valores no original.",
             13, 400, "secondary"))
+        c.addWidget(card)
+
+        c.addWidget(SectionTitle("Fotos"))
+        card = TileCard()
+        dw = QCheckBox("Ao converter fotos em PDF, corrigir páginas curvas")
+        dw.setChecked(bool(app.setting("dewarp_photos", False)))
+        dw.toggled.connect(lambda v: app.set_setting("dewarp_photos", v))
+        card.lay.addWidget(dw)
+        card.lay.addWidget(Label(
+            "Para fotos de livros e revistas (curvatura perto da lombada) e de papel ondulado: o texto fica reto e o "
+            "OCR acerta mais. Vale para fotos de câmera (JPG e HEIC). Em fotos de páginas já retas, deixe desligado: "
+            "a margem pode ser cortada. Também dá para corrigir um PDF pronto, na tela dele, em “Corrigir páginas "
+            "curvas”. A correção usa o modelo UVDoc e roda inteiramente neste computador.", 13, 400, "secondary"))
         c.addWidget(card)
 
         c.addWidget(SectionTitle("Aparência"))

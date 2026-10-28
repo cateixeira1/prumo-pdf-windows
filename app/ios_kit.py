@@ -224,10 +224,20 @@ class Thumb:
     def __init__(self, owner: QWidget, thumbs):
         self.owner, self.thumbs, self.key = owner, thumbs, None
         thumbs.ready.connect(self._ready)
+        owner.destroyed.connect(self._disconnect)   # a tela fechou: para de ouvir as miniaturas
+
+    def _disconnect(self, *_):
+        try:
+            self.thumbs.ready.disconnect(self._ready)
+        except (RuntimeError, TypeError):
+            pass
 
     def _ready(self, key):
         if key == self.key:
-            self.owner.update()
+            try:
+                self.owner.update()
+            except RuntimeError:   # a tela já foi apagada
+                self._disconnect()
 
     def paint(self, p: QPainter, rect: QRectF, path, version, page=0, radius=4.0):
         dpr = self.owner.devicePixelRatioF()

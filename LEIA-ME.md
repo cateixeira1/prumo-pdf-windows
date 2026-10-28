@@ -10,6 +10,7 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **Busca dentro do PDF (Ctrl+F)**, nas páginas e no modo leitor: não precisa de acentos nem maiúsculas (“indenizacao” acha “Indenização”), destaca todas as ocorrências e anda entre elas com Enter / Shift+Enter ou F3.
 - **Organizar páginas:** arraste para mudar a ordem (a lista rola sozinha perto das bordas), gire, exclua, desfaça; Ctrl+roda do mouse muda o tamanho das miniaturas.
 - **Incluir páginas** de outro PDF (ou do próprio): todas ou trechos como 5-15, no início, no fim ou depois de uma página.
+- **Corrigir páginas curvas:** fotos de livros e revistas (página curvada perto da lombada), papel ondulado ou dobrado ficam com o texto reto, o que também melhora o OCR. Na tela do PDF, “Corrigir páginas curvas” mostra o antes e o depois e cria uma cópia “- corrigido” (só as páginas escolhidas mudam). Em Ajustes, dá para corrigir automaticamente as fotos ao converter. Usa o modelo UVDoc, que roda inteiramente no computador.
 - **Converter em PDF:** fotos e imagens (JPG, PNG, HEIC do iPhone, TIFF de várias páginas, BMP, GIF, WebP), Word, Excel e PowerPoint (DOC, DOCX, RTF, ODT, XLS, XLSX, ODS, PPT, PPTX, ODP), texto (TXT, CSV) e HTML. Várias fotos podem virar um PDF só, uma por página A4, ou um PDF para cada; depois, o app pergunta se quer fazer o OCR. Os arquivos do Office são convertidos pelo próprio Office instalado (como o “Salvar como PDF”) ou, sem Office, pelo LibreOffice; sem nenhum dos dois, um .docx ainda é convertido de forma simplificada. Também dá para importar ou arrastar esses arquivos direto: eles viram PDF na hora.
 - **OCR em português:** só as páginas em imagem passam pelo OCR; páginas que já têm texto ficam como estão. O resultado é uma cópia com “- OCR” no nome, na mesma pasta. Páginas com baixa confiança são marcadas para revisão.
 - **Remover, extrair, dividir em partes iguais e combinar.** Na divisão, um PDF de 200 páginas em 4 partes vira “Nome - Parte 1” a “Parte 4”.
@@ -21,13 +22,13 @@ Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá pa
 - **Backup:** os Ajustes mostram se os PDFs estão só neste computador ou numa nuvem. Se o OneDrive, o Google Drive, o iCloud Drive ou o Dropbox estiverem instalados, um clique leva a biblioteca para lá (com backup automático). Também dá para fazer uma **cópia de segurança** completa (PDFs, pastas e favoritos) num pendrive ou HD externo e **restaurar** depois, sem duplicar arquivos. A cópia é uma pasta comum e abre também no Prumo para iPhone.
 - **No Windows:** o Prumo aparece em **Abrir com** nos PDFs (sem trocar o seu leitor padrão) e, no botão direito de fotos e arquivos do Word, Excel e PowerPoint, em **Converter em PDF com o Prumo**. Com o Prumo já aberto, os arquivos vão para a mesma janela.
 
-Próximas etapas: correção de páginas curvadas e segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
+Próxima etapa: segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ---
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.5.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.6.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
@@ -89,5 +90,8 @@ Os critérios de classificação de página (quantidade mínima de texto, cobert
 | img2pdf, Pillow | imagens em PDF sem perda de qualidade | LGPL v3, MIT-CMU |
 | pillow-heif (libheif) | fotos HEIC do iPhone | BSD-3 (libheif: LGPL v3) |
 | mammoth | .docx em PDF sem o Word | BSD-2 |
+| fpdf2 | texto, HTML e .docx em PDF com texto selecionável | LGPL v3 |
+| UVDoc (Verhoeven, Magne, Sorkine-Hornung, SIGGRAPH Asia 2023) | modelo de correção de páginas curvas (models/uvdoc.onnx, exportado do original) | MIT |
+| ONNX Runtime, NumPy | roda o modelo UVDoc no computador | MIT, BSD-3 |
 
 O Ghostscript **não** é usado: desde a versão 17, o OCRmyPDF consegue trabalhar sem ele.

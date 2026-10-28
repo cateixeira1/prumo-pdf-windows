@@ -128,14 +128,37 @@ def _tiff_pages(path: Path) -> list[bytes]:
     return out
 
 
-def images_to_pdf(paths: list[Path], dest: Path) -> int:
+PHOTO_EXT = {".jpg", ".jpeg", ".heic", ".heif"}
+
+
+def _dewarped_bytes(path: Path) -> bytes:
+    """Foto de câmera com a página corrigida (curvatura de livro, papel ondulado)."""
+    import io
+
+    from PIL import Image
+
+    import dewarp
+    with Image.open(io.BytesIO(_image_bytes(path))) as im:
+        out = dewarp.unwarp(im.convert("RGB"))
+    buf = io.BytesIO()
+    out.save(buf, "JPEG", quality=92)
+    return buf.getvalue()
+
+
+def images_to_pdf(paths: list[Path], dest: Path, dewarp_photos: bool = False) -> int:
     """Junta as imagens num PDF, uma por página A4 (retrato ou paisagem, conforme a imagem)."""
     import img2pdf
 
     blobs = []
+    use_dewarp = False
+    if dewarp_photos:
+        import dewarp
+        use_dewarp = dewarp.available()
     for p in paths:
         if p.suffix.lower() in (".tif", ".tiff"):
             blobs.extend(_tiff_pages(p))
+        elif use_dewarp and p.suffix.lower() in PHOTO_EXT:
+            blobs.append(_dewarped_bytes(p))
         else:
             blobs.append(_image_bytes(p))
     if not blobs:
@@ -398,7 +421,7 @@ def office_document_to_pdf(src: Path, dest: Path) -> bool:
 # --- Conversão de uma lista -------------------------------------------------------------
 
 def convert(paths: list[str | Path], combine_images: bool = False, combined_name: str | None = None,
-            work_dir: Path | None = None, progress=None) -> Result:
+            work_dir: Path | None = None, progress=None, dewarp_photos: bool = False) -> Result:
     """
     Converte os arquivos para PDFs numa pasta temporária (quem chama move para a biblioteca).
     PDFs na lista são ignorados aqui. `progress(i, total, nome)` é chamado antes de cada arquivo.
@@ -423,7 +446,7 @@ def convert(paths: list[str | Path], combine_images: bool = False, combined_name
         dest = work / f"{n:03d}.pdf"
         try:
             if k == "images":
-                images_to_pdf(group, dest)
+                images_to_pdf(group, dest, dewarp_photos=dewarp_photos)
                 res.from_images = True
             elif k == "text":
                 text_to_pdf(first, dest)

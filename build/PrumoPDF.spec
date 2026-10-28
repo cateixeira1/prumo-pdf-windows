@@ -9,7 +9,8 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 APP = os.path.join(ROOT, "app")
 
 datas = [(os.path.join(ROOT, "tessdata"), "tessdata"),
-         (os.path.join(ROOT, "assets", "PrumoPDF.ico"), "assets")]   # ícone da janela e da barra de tarefas
+         (os.path.join(ROOT, "assets", "PrumoPDF.ico"), "assets"),
+         (os.path.join(ROOT, "models", "uvdoc.onnx"), "models")]   # correção de páginas curvas (UVDoc, MIT)   # ícone da janela e da barra de tarefas
 if os.path.isdir(os.path.join(ROOT, "tessdata_best")):
     datas.append((os.path.join(ROOT, "tessdata_best"), "tessdata_best"))
 datas += collect_data_files("fpdf")
@@ -24,13 +25,13 @@ a = Analysis(
         "ocr_worker", "ocr_plugin", "core", "ui_common",
         "page_ocr", "page_merge", "page_extract",
         "library", "pdfops", "services", "ocr_runner", "ios_theme", "ios_kit",
-        "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert", "backup",
+        "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert", "backup", "dewarp", "onnxruntime",
         "mammoth", "pillow_heif", "img2pdf",
     ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[
-        "tkinter", "matplotlib", "numpy", "IPython", "pytest",
+        "tkinter", "matplotlib", "IPython", "pytest",
         "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtQml",
         "PySide6.QtQuick", "PySide6.Qt3DCore", "PySide6.QtMultimedia", "PySide6.QtPdf",
     ],
