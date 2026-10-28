@@ -178,10 +178,116 @@ def _app_setup():
     return app, T
 
 
+def _server_name() -> str:
+    import getpass
+    try:
+        user = getpass.getuser()
+    except Exception:
+        user = "usuario"
+    return f"PrumoPDF-{user}"
+
+
+_MUTEX = None
+
+
+def _is_primary() -> bool:
+    """No Windows, só o primeiro processo do usuário consegue o marcador; os outros entregam os arquivos a ele."""
+    global _MUTEX
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+        _MUTEX = ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\" + _server_name())
+        return ctypes.windll.kernel32.GetLastError() != 183   # ERROR_ALREADY_EXISTS
+    except Exception:
+        return True
+
+
+def _send_to_running(message: dict) -> bool:
+    """Se o Prumo já está aberto, entrega os arquivos para ele (uma janela só) e devolve True."""
+    import json
+
+    from PySide6.QtNetwork import QLocalSocket
+    sock = QLocalSocket()
+    sock.connectToServer(_server_name())
+    if not sock.waitForConnected(400):
+        return False
+    sock.write(json.dumps(message).encode("utf-8"))
+    sock.flush()
+    sock.waitForBytesWritten(2000)
+    sock.disconnectFromServer()
+    return True
+
+
+def start_instance_server(window, delay_ms: int = 700):
+    """
+    Recebe os arquivos abertos depois (Abrir com, botão direito > Converter em PDF). O Windows abre
+    um processo por arquivo selecionado: os que chegam juntos são tratados de uma vez.
+    """
+    import json
+
+    from PySide6.QtCore import QTimer
+    from PySide6.QtNetwork import QLocalServer
+    server = QLocalServer(window)
+    if not server.listen(_server_name()):
+        QLocalServer.removeServer(_server_name())
+        server.listen(_server_name())
+    pending = {"open": [], "convert": []}
+    timer = QTimer(window)
+    timer.setSingleShot(True)
+    timer.setInterval(delay_ms)
+
+    def flush():
+        o, c = pending["open"][:], pending["convert"][:]
+        pending["open"].clear()
+        pending["convert"].clear()
+        if o or c:
+            window.handle_external(o, c)
+        else:
+            window.showNormal()
+            window.raise_()
+            window.activateWindow()
+    timer.timeout.connect(flush)
+
+    def on_connection():
+        conn = server.nextPendingConnection()
+        buf = bytearray()
+
+        def read():
+            buf.extend(bytes(conn.readAll()))
+
+        def done():
+            read()
+            try:
+                msg = json.loads(buf.decode("utf-8") or "{}")
+            except ValueError:
+                msg = {}
+            pending["open"].extend(msg.get("open", []))
+            pending["convert"].extend(msg.get("convert", []))
+            timer.start()
+            conn.deleteLater()
+        conn.readyRead.connect(read)
+        conn.disconnected.connect(done)
+    server.newConnection.connect(on_connection)
+    return server
+
+
 def run_gui(files: list[str]) -> int:
     from PySide6.QtCore import QSettings
 
+    convert_mode = "--convert" in files
+    paths = [os.path.abspath(f) for f in files if not f.startswith("--")]
+    message = {"open": [] if convert_mode else paths, "convert": paths if convert_mode else []}
     app, T = _app_setup()
+    if _send_to_running(message):
+        return 0
+    if not _is_primary():
+        # Outro processo do Prumo acabou de abrir (vários arquivos ao mesmo tempo): espera a janela dele.
+        import time
+        for _ in range(30):
+            time.sleep(0.2)
+            if _send_to_running(message):
+                return 0
     from app_window import MainWindow
     from ocr_runner import clean_stale_temp
 
@@ -190,9 +296,10 @@ def run_gui(files: list[str]) -> int:
     T.setup(str(settings.value("appearance", "system")))
     w = MainWindow(settings)
     w.show()
-    pdfs = [f for f in files if f.lower().endswith(".pdf") and os.path.isfile(f)]
-    if pdfs:
-        w.import_paths(pdfs)
+    w._instance_server = start_instance_server(w)
+    if message["open"] or message["convert"]:
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(300, lambda: w.handle_external(message["open"], message["convert"]))
     return app.exec()
 
 
@@ -249,7 +356,18 @@ def self_test(report_file: str) -> int:
         result["tessdata"] = str(core.tessdata_dir()) if core.tessdata_dir() else None
         result["tessdata_best"] = str(core.tessdata_dir(True)) if core.tessdata_dir(True) else None
         result["tesseract"] = str(core.find_tesseract()) if core.find_tesseract() else None
-        result["ok"] = bool(result["tessdata"])
+        import convert  # noqa: F401
+        import fpdf, img2pdf, mammoth  # noqa: F401, E401
+        from PySide6 import QtNetwork  # noqa: F401
+        try:
+            import pillow_heif  # noqa: F401
+            result["heic"] = True
+        except Exception as exc:  # noqa: BLE001
+            result["heic"] = repr(exc)
+        from ios_theme import _icon_file
+        result["icon"] = str(_icon_file()) if _icon_file() else None
+        result["version"] = core.APP_VERSION
+        result["ok"] = bool(result["tessdata"]) and bool(result["icon"]) and result["heic"] is True
     except Exception as exc:
         result["ok"] = False
         result["error"] = repr(exc)

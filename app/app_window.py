@@ -455,13 +455,17 @@ class MainWindow(QMainWindow):
 
     def change_library(self):
         new = QFileDialog.getExistingDirectory(self, "Escolher a pasta da biblioteca", str(self.lib.root.parent))
-        if not new:
-            return
-        new_root = Path(new)
-        if new_root.name != "Prumo PDF" and any(new_root.iterdir()):
+        if new:
+            self.change_library_to(Path(new))
+
+    def change_library_to(self, new_root: Path):
+        """Muda a pasta da biblioteca (por exemplo, para dentro do OneDrive), movendo os PDFs se o usuário quiser."""
+        new_root = Path(new_root)
+        if new_root.name != "Prumo PDF" and new_root.exists() and any(new_root.iterdir()):
             new_root = new_root / "Prumo PDF"
         old = self.lib.root
         if new_root.resolve() == old.resolve():
+            self.toast("A biblioteca já está nessa pasta.")
             return
         if self.jobs.is_busy():
             self.show_error("Espere o OCR terminar antes de mudar a pasta da biblioteca.")
@@ -483,12 +487,97 @@ class MainWindow(QMainWindow):
                             continue
                         raise UserError(f"Já existe “{entry.name}” na nova pasta. Nada foi movido depois dele.")
                     shutil.move(str(entry), str(target))
-        if not self.attempt(run, busy="Movendo…"):
+        try:
+            self.run_with_progress("Movendo os PDFs…", lambda _p: run())
+        except UserError as exc:
+            self.show_error(str(exc))
+            return
+        except OSError as exc:
+            self.show_error(f"Não foi possível mover: {exc.strerror or exc}. O arquivo pode estar aberto em outro "
+                            "programa.")
             return
         self.set_setting("library_root", str(new_root))
         self._swap_library(str(new_root))
-        self.toast("Pasta da biblioteca alterada.")
+        import backup
+        cloud = backup.cloud_of(new_root)
+        self.toast(f"Pronto: a biblioteca agora está no {cloud}, com backup na nuvem." if cloud
+                   else "Pasta da biblioteca alterada.")
 
+    # --- cópia de segurança ---
+    def backup_now(self):
+        import backup
+        start = self.setting("backup_dir", str(Path.home()))
+        dest = QFileDialog.getExistingDirectory(self, "Onde guardar a cópia? (pendrive, HD externo…)", start)
+        if not dest:
+            return
+        try:
+            target, n = self.run_with_progress("Fazendo a cópia de segurança…",
+                                               lambda _p: backup.make_copy(self.lib.root, Path(dest)))
+        except UserError as exc:
+            self.show_error(str(exc))
+            return
+        except OSError as exc:
+            self.show_error(f"Não foi possível copiar: {exc.strerror or exc}")
+            return
+        self.set_setting("backup_dir", dest)
+        self.set_setting("last_backup", __import__("time").time())
+        self.toast(f"Cópia feita: {n} PDF{'s' if n != 1 else ''} em “{target.name}”.", "Mostrar",
+                   lambda: self.reveal(target))
+        self.current().refresh()
+
+    def restore_from(self):
+        import backup
+        idx = alert(self, "Restaurar de uma cópia",
+                    "Escolha a pasta da cópia (ou qualquer pasta com PDFs). Os PDFs voltam para a biblioteca nas "
+                    "mesmas pastas; os que já estão aqui não são duplicados. Também dá para escolher um arquivo .zip.",
+                    [("Escolher pasta", "default"), ("Escolher .zip", "default"), ("Cancelar", "cancel")])
+        if idx is None or idx == 2:
+            return
+        start = self.setting("backup_dir", str(Path.home()))
+        if idx == 0:
+            src = QFileDialog.getExistingDirectory(self, "Pasta da cópia", start)
+        else:
+            src, _ = QFileDialog.getOpenFileName(self, "Arquivo .zip da cópia", start, "ZIP (*.zip)")
+        if not src:
+            return
+        try:
+            res = self.run_with_progress("Restaurando…", lambda _p: backup.restore(Path(src), self.lib))
+        except Exception as exc:  # noqa: BLE001
+            self.show_error(f"Não foi possível restaurar: {exc}")
+            return
+        parts = [f"{res.added} PDF{'s' if res.added != 1 else ''} restaurado{'s' if res.added != 1 else ''}"]
+        if res.skipped:
+            parts.append(f"{res.skipped} já estava{'m' if res.skipped != 1 else ''} na biblioteca")
+        self.toast(", ".join(parts) + ".")
+
+    # --- arquivos vindos do Explorador ("Abrir com", botão direito) ---
+    def handle_external(self, open_paths=(), convert_paths=()):
+        """PDFs abertos pelo Windows: abre no leitor (sem importar duas vezes). Outros arquivos: converte."""
+        import backup
+        import convert
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        pdfs = [Path(p) for p in open_paths if str(p).lower().endswith(".pdf") and Path(p).is_file()]
+        others = [Path(p) for p in list(open_paths) + list(convert_paths)
+                  if convert.is_convertible(p) and Path(p).is_file()]
+        opened = None
+        for p in pdfs:
+            same = backup.find_same_file(p, self.lib)
+            if same is None:
+                res = {}
+                if self.attempt(lambda: res.setdefault("items", self.lib.import_files([p], ""))) and res["items"]:
+                    same = res["items"][0]
+            opened = same or opened
+        if others:
+            made = self.convert_files(others, "")
+            if made and opened is None and len(made) == 1:
+                opened = made[0]
+                return
+        if opened is not None and len(pdfs) == 1:
+            self.read(opened)
+        elif len(pdfs) > 1:
+            self.toast(f"{len(pdfs)} PDFs abertos na biblioteca (Sem pasta).")
     def _swap_library(self, root: str):
         from screens import HomeScreen, SettingsScreen
         self.hub.shutdown()

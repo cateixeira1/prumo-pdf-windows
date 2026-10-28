@@ -24,7 +24,7 @@ a = Analysis(
         "ocr_worker", "ocr_plugin", "core", "ui_common",
         "page_ocr", "page_merge", "page_extract",
         "library", "pdfops", "services", "ocr_runner", "ios_theme", "ios_kit",
-        "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert",
+        "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert", "backup",
         "mammoth", "pillow_heif", "img2pdf",
     ],
     hookspath=[],
@@ -38,6 +38,24 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# Informações de versão do PrumoPDF.exe (aparecem em Propriedades > Detalhes no Windows).
+import re as _re
+_ver = _re.search(r'APP_VERSION = "([0-9.]+)"', open(os.path.join(APP, "core.py"), encoding="utf-8").read()).group(1)
+_nums = tuple(int(x) for x in (_ver.split(".") + ["0", "0", "0"])[:4])
+from PyInstaller.utils.win32.versioninfo import (FixedFileInfo, StringFileInfo, StringStruct, StringTable,
+                                                 VarFileInfo, VarStruct, VSVersionInfo)
+version_info = VSVersionInfo(
+    ffi=FixedFileInfo(filevers=_nums, prodvers=_nums),
+    kids=[StringFileInfo([StringTable("041604B0", [
+        StringStruct("CompanyName", "Prumo PDF"),
+        StringStruct("FileDescription", "Prumo PDF"),
+        StringStruct("FileVersion", _ver),
+        StringStruct("ProductName", "Prumo PDF"),
+        StringStruct("ProductVersion", _ver),
+        StringStruct("OriginalFilename", "PrumoPDF.exe"),
+        StringStruct("LegalCopyright", "Prumo PDF"),
+    ])]), VarFileInfo([VarStruct("Translation", [0x0416, 1200])])])
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -49,6 +67,7 @@ exe = EXE(
     upx=False,
     console=False,                 # aplicativo de janela, sem console
     icon=os.path.join(ROOT, "assets", "PrumoPDF.ico"),
+    version=version_info,
 )
 
 coll = COLLECT(

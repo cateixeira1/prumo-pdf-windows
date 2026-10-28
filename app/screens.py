@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QIntValidator, QPainter, QPen, QTransform
+from PySide6.QtCore import QRectF, QSize, Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QIntValidator, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QHBoxLayout,
                                QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
                                QWidget)
@@ -1558,26 +1558,92 @@ class SettingsScreen(Screen):
         app, lib = self.app, self.app.lib
         self.clear_after_title(1)
         c = self.content
+        import backup
+        clouds = backup.cloud_folders()
+        cloud = backup.cloud_of(lib.root, clouds)
+
+        def small_button(text, fn, color="blue"):
+            btn = QPushButton(text)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setFont(font(14, 600))
+            btn.setStyleSheet(f"QPushButton {{ background: {T.hex('search')}; border: none; border-radius: 8px; "
+                              f"padding: 8px 14px; color: {T.color(color).name()}; }}")
+            btn.clicked.connect(fn)
+            return btn
+
+        def status_row(glyph, color, title, text):
+            row = QHBoxLayout()
+            ic = Label("")
+            ic.setPixmap(glyph_icon(glyph, T.color(color), 22).pixmap(22, 22))
+            ic.setFixedWidth(28)
+            row.addWidget(ic, 0, Qt.AlignTop)
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            col.addWidget(Label(title, 16, 600))
+            col.addWidget(Label(text, 13, 400, "secondary"))
+            row.addLayout(col, 1)
+            return row
+
         c.addWidget(SectionTitle("Biblioteca e backup"))
         card = TileCard()
-        card.lay.addWidget(Label("Pasta da biblioteca", 16, 600))
+        if cloud:
+            card.lay.addLayout(status_row("check", "green", f"Backup no {cloud}",
+                                          f"Os PDFs ficam numa pasta do {cloud}: tudo o que você salva aqui vai para a "
+                                          "nuvem e aparece nos outros computadores e no celular."))
+        else:
+            card.lay.addLayout(status_row("warning", "orange", "Só neste computador",
+                                          "Se o computador estragar ou for perdido, os PDFs vão junto. Leve a biblioteca "
+                                          "para uma nuvem (abaixo) ou faça cópias de segurança de vez em quando."))
         path = Label(str(lib.root), 13, 400, "secondary")
         path.setTextInteractionFlags(Qt.TextSelectableByMouse)
         card.lay.addWidget(path)
+        if clouds and not cloud:
+            card.lay.addWidget(Label("Nuvens encontradas neste computador:", 13, 600))
+            row = QHBoxLayout()
+            for name, folder in clouds:
+                row.addWidget(small_button(f"Levar para o {name}",
+                                           lambda _c=False, f=folder: app.change_library_to(f / "Prumo PDF")))
+            row.addStretch(1)
+            card.lay.addLayout(row)
+        elif not clouds and not cloud:
+            card.lay.addWidget(Label("Nenhuma nuvem encontrada. Instale o OneDrive, o Google Drive para computador, o "
+                                     "iCloud para Windows ou o Dropbox e volte aqui.", 13, 400, "secondary"))
+        row = QHBoxLayout()
+        row.addWidget(small_button("Abrir no Explorador", lambda: app.reveal(lib.root)))
+        row.addWidget(small_button("Mudar pasta…", app.change_library))
+        row.addStretch(1)
+        card.lay.addLayout(row)
         card.lay.addWidget(Label(
             "Os PDFs ficam como arquivos comuns nessa pasta: dá para abrir, copiar e editar com qualquer programa. "
-            "Para ter backup na nuvem que você usa, escolha uma pasta sincronizada pelo OneDrive, Google Drive, "
-            "iCloud Drive ou Dropbox. Os favoritos e a ligação com as cópias de OCR vão junto, na subpasta oculta “.prumo”.",
+            "Os favoritos e a ligação com as cópias de OCR vão junto, na subpasta oculta “.prumo”.",
             13, 400, "secondary"))
+        c.addWidget(card)
+
+        c.addWidget(SectionTitle("Cópia de segurança"))
+        card = TileCard()
+        last = app.setting("last_backup", None)
+        try:
+            last_text = f"Última cópia: {date_text(float(last))}." if last else "Nenhuma cópia feita ainda."
+        except (TypeError, ValueError):
+            last_text = "Nenhuma cópia feita ainda."
+        card.lay.addWidget(Label("Uma cópia completa (PDFs, pastas e favoritos) numa pasta comum, por exemplo num "
+                                 "pendrive ou HD externo. " + last_text, 13.5))
         row = QHBoxLayout()
-        for text, fn in (("Abrir no Explorador", lambda: app.reveal(lib.root)), ("Mudar pasta…", app.change_library)):
-            b = QPushButton(text)
-            b.setCursor(Qt.PointingHandCursor)
-            b.setFont(font(14, 600))
-            b.setStyleSheet(f"QPushButton {{ background: {T.hex('search')}; border: none; border-radius: 8px; "
-                            f"padding: 8px 14px; color: {T.color('blue').name()}; }}")
-            b.clicked.connect(fn)
-            row.addWidget(b)
+        row.addWidget(small_button("Fazer uma cópia agora…", app.backup_now))
+        row.addWidget(small_button("Restaurar de uma cópia…", app.restore_from))
+        row.addStretch(1)
+        card.lay.addLayout(row)
+        c.addWidget(card)
+
+        c.addWidget(SectionTitle("Windows"))
+        card = TileCard()
+        card.lay.addWidget(Label(
+            "O Prumo aparece em “Abrir com” nos PDFs e, no botão direito de fotos e arquivos do Word, Excel e "
+            "PowerPoint, em “Converter em PDF com o Prumo”. Para abrir todo PDF no Prumo com dois cliques, "
+            "escolha o Prumo PDF como aplicativo padrão para .pdf nas configurações do Windows.", 13.5))
+        row = QHBoxLayout()
+        row.addWidget(small_button("Aplicativos padrão do Windows…",
+                                   lambda: QDesktopServices.openUrl(QUrl("ms-settings:defaultapps"))))
         row.addStretch(1)
         card.lay.addLayout(row)
         c.addWidget(card)

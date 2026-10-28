@@ -16,15 +16,18 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **Desfazer** a última alteração de páginas de cada PDF.
 - **Compartilhar:** copiar o arquivo para colar (Ctrl+V) no WhatsApp ou no e-mail, exportar uma cópia ou mostrar no Explorador.
 
-Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá para mudar em Ajustes). Para ter backup na nuvem que você usa, escolha uma pasta sincronizada pelo OneDrive, Google Drive, iCloud Drive ou Dropbox.
+Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá para mudar em Ajustes).
 
-Próximas etapas: ajustes e backup, correção de páginas curvadas e segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
+- **Backup:** os Ajustes mostram se os PDFs estão só neste computador ou numa nuvem. Se o OneDrive, o Google Drive, o iCloud Drive ou o Dropbox estiverem instalados, um clique leva a biblioteca para lá (com backup automático). Também dá para fazer uma **cópia de segurança** completa (PDFs, pastas e favoritos) num pendrive ou HD externo e **restaurar** depois, sem duplicar arquivos. A cópia é uma pasta comum e abre também no Prumo para iPhone.
+- **No Windows:** o Prumo aparece em **Abrir com** nos PDFs (sem trocar o seu leitor padrão) e, no botão direito de fotos e arquivos do Word, Excel e PowerPoint, em **Converter em PDF com o Prumo**. Com o Prumo já aberto, os arquivos vão para a mesma janela.
+
+Próximas etapas: correção de páginas curvadas e segurança (senha e criptografia padrão de PDF). A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ---
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.4.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.5.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
