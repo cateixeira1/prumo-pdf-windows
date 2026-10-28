@@ -174,6 +174,22 @@ class ConvertTests(unittest.TestCase):
         if convert.office_app_for(p) is None and convert.find_libreoffice() is None:
             self.assertEqual(res.simplified, ["Petição.docx"])
 
+    def test_docx_without_office_keeps_searchable_text(self):
+        import convert
+        p = make_docx(self.tmp / "Contestação.docx", ["O réu contesta a ação de indenização.", "Pede improcedência."])
+        orig = (convert.office_app_for, convert.find_libreoffice)
+        convert.office_app_for = lambda _p: None
+        convert.find_libreoffice = lambda: None
+        try:
+            res = convert.convert([p], work_dir=self.tmp / "w8")
+        finally:
+            convert.office_app_for, convert.find_libreoffice = orig
+        self.assertEqual(res.failed, [])
+        self.assertEqual(res.simplified, ["Contestação.docx"])
+        text = pdf_text(res.created[0])
+        self.assertIn("improcedência", text)
+        self.assertIn("Valor", text, "a tabela entra no PDF")
+
     def test_spreadsheet_without_office_reports_clearly(self):
         import convert
         p = self.tmp / "planilha.xlsx"

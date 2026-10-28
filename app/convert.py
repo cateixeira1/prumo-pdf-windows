@@ -151,23 +151,58 @@ def images_to_pdf(paths: list[Path], dest: Path) -> int:
     return len(blobs)
 
 
-# --- Texto e HTML (Qt) ----------------------------------------------------------
+# --- Texto e HTML (fpdf2) ----------------------------------------------------------
+# O fpdf2 grava texto de verdade (selecionável e pesquisável), com a fonte embutida.
+# (O QPdfWriter, no Windows, chegou a gravar as letras só como desenho, sem texto.)
 
-def _document_to_pdf(doc, dest: Path) -> None:
-    from PySide6.QtCore import QMarginsF, QSizeF
-    from PySide6.QtGui import QPageLayout, QPageSize, QPdfWriter
+_FONT_SETS = [
+    # (regular, negrito, itálico, negrito itálico) — fontes do Windows e, fora dele, DejaVu
+    ("C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/segoeuii.ttf",
+     "C:/Windows/Fonts/segoeuiz.ttf"),
+    ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/ariali.ttf",
+     "C:/Windows/Fonts/arialbi.ttf"),
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+     "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf"),
+]
+_MONO = ["C:/Windows/Fonts/consola.ttf", "C:/Windows/Fonts/cour.ttf",
+         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"]
 
-    writer = QPdfWriter(str(dest))
-    writer.setPageSize(QPageSize(QPageSize.A4))
-    writer.setPageMargins(QMarginsF(20, 20, 20, 20), QPageLayout.Millimeter)
-    writer.setResolution(300)
-    writer.setTitle(dest.stem)
-    writer.setCreator("Prumo PDF")
-    # O QTextDocument mede a fonte a 96 dpi: a página dele tem a área útil do A4 nessa escala.
-    # Assim a letra sai no tamanho pedido e o texto ocupa a largura toda entre as margens.
-    rect = writer.pageLayout().paintRect(QPageLayout.Point)
-    doc.setPageSize(QSizeF(rect.width() * 96 / 72, rect.height() * 96 / 72))
-    doc.print_(writer)
+
+def _new_pdf(title: str, monospaced: bool = False):
+    """FPDF em A4, margens de 2 cm, com uma fonte Unicode do sistema (acentos e símbolos)."""
+    from fpdf import FPDF
+
+    pdf = FPDF(format="A4", unit="mm")
+    pdf.set_margins(20, 20, 20)
+    pdf.set_auto_page_break(True, margin=20)
+    pdf.set_title(title)
+    pdf.set_creator("Prumo PDF")
+    family = None
+    if monospaced:
+        mono = next((f for f in _MONO if Path(f).exists()), None)
+        if mono:
+            pdf.add_font("Mono", "", mono)
+            family = "Mono"
+    if family is None:
+        for regular, bold, italic, both in _FONT_SETS:
+            if Path(regular).exists():
+                pdf.add_font("Texto", "", regular)
+                for style, f in (("B", bold), ("I", italic), ("BI", both)):
+                    pdf.add_font("Texto", style, f if Path(f).exists() else regular)
+                family = "Texto"
+                break
+    if family is None:
+        family = "Courier" if monospaced else "Helvetica"   # fontes básicas do PDF (sem Unicode completo)
+    pdf.set_font(family, size=10 if monospaced else 11)
+    pdf.add_page()
+    return pdf, family
+
+
+def _latin1_safe(text: str, family: str) -> str:
+    if family in ("Helvetica", "Courier"):
+        return text.encode("cp1252", errors="replace").decode("cp1252")
+    return text
 
 
 def _read_text(path: Path) -> str:
@@ -181,33 +216,48 @@ def _read_text(path: Path) -> str:
 
 
 def text_to_pdf(path: Path, dest: Path) -> None:
-    from PySide6.QtGui import QFont, QTextDocument
+    mono = path.suffix.lower() in (".csv", ".log")
+    pdf, family = _new_pdf(path.stem, monospaced=mono)
+    text = _read_text(path).replace("\r\n", "\n").replace("\t", "    ")
+    pdf.multi_cell(0, 4.6 if mono else 5.4, _latin1_safe(text, family))
+    pdf.output(str(dest))
 
-    doc = QTextDocument()
-    f = QFont()
-    f.setFamilies(["Consolas", "Cascadia Mono", "DejaVu Sans Mono", "Courier New"]
-                  if path.suffix.lower() in (".csv", ".log") else ["Segoe UI", "Calibri", "Arial", "DejaVu Sans"])
-    f.setPointSizeF(10.5)
-    doc.setDefaultFont(f)
-    doc.setPlainText(_read_text(path))
-    _document_to_pdf(doc, dest)
+
+def _strip_html(html: str) -> str:
+    import html as h
+    import re
+    text = re.sub(r"(?is)<(script|style).*?</\1>", " ", html)
+    text = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</h[1-6]>|</li>|</tr>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = h.unescape(text)
+    return "\n".join(re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()).strip()
 
 
 def html_to_pdf(html: str, dest: Path, base: Path | None = None) -> None:
-    from PySide6.QtCore import QUrl
-    from PySide6.QtGui import QFont, QTextDocument
+    """HTML simples (títulos, negrito, listas, tabelas, imagens). Se o HTML for complexo demais, fica o texto."""
+    import re
 
-    doc = QTextDocument()
-    f = QFont()
-    f.setFamilies(["Segoe UI", "Calibri", "Arial", "DejaVu Sans"])
-    f.setPointSizeF(11)
-    doc.setDefaultFont(f)
-    if base is not None:
-        doc.setBaseUrl(QUrl.fromLocalFile(str(base) + os.sep))
-    doc.setDefaultStyleSheet("table { border-collapse: collapse; } td, th { border: 1px solid #999; padding: 4px; }"
-                             "h1 { font-size: 18pt; } h2 { font-size: 15pt; } h3 { font-size: 13pt; }")
-    doc.setHtml(html)
-    _document_to_pdf(doc, dest)
+    body = re.search(r"(?is)<body[^>]*>(.*)</body>", html)
+    content = body.group(1) if body else html
+    content = re.sub(r"(?is)<(script|style|head|meta|link)[^>]*>.*?</\1>|<(meta|link)[^>]*>", "", content)
+    if base is not None:   # imagens com caminho relativo
+        def fix(m):
+            src = m.group(2)
+            if re.match(r"(?i)^(https?:|data:|[a-z]:|/)", src):
+                return m.group(0)
+            return f"{m.group(1)}{(base / src).as_posix()}{m.group(3)}"
+        content = re.sub(r'(?i)(<img[^>]*?src=["\'])([^"\']+)(["\'])', fix, content)
+    pdf, family = _new_pdf(dest.stem)
+    try:
+        from fpdf.fonts import FontFace
+        black = {f"h{n}": FontFace(color=(0, 0, 0), emphasis="BOLD", size_pt=size)
+                 for n, size in zip(range(1, 7), (18, 15, 13, 12, 11, 11))}
+        pdf.write_html(content, font_family=family, tag_styles=black)
+        pdf.output(str(dest))
+    except Exception:
+        pdf, family = _new_pdf(dest.stem)
+        pdf.multi_cell(0, 5.4, _latin1_safe(_strip_html(html), family))
+        pdf.output(str(dest))
 
 
 def docx_simplified(path: Path, dest: Path) -> None:
