@@ -156,14 +156,21 @@ class ExternalOpenTests(unittest.TestCase):
             server = main.start_instance_server(w, delay_ms=50)
             self.assertTrue(server.isListening())
             other = digital_pdf(tmp / "Downloads" / "Acórdão.pdf", 2)
-            import threading
-            sent = []
-            t = threading.Thread(target=lambda: sent.append(main._send_to_running({"open": [str(other)], "convert": []})))
-            t.start()
-            end = time.time() + 5
-            while t.is_alive() and time.time() < end:
+            # um segundo processo de verdade (como o Windows faz ao abrir um PDF com o Prumo já aberto)
+            import json
+            import subprocess
+            code = ("import sys, json; sys.path.insert(0, sys.argv[1]); "
+                    "from PySide6.QtCore import QCoreApplication; app = QCoreApplication([]); "
+                    "import main; print('ENVIADO' if main._send_to_running(json.loads(sys.argv[2])) else 'FALHOU')")
+            proc = subprocess.Popen([sys.executable, "-c", code, str(ROOT / "app"),
+                                     json.dumps({"open": [str(other)], "convert": []})],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                    env=dict(os.environ))
+            end = time.time() + 20
+            while proc.poll() is None and time.time() < end:
                 pump(30)
-            self.assertEqual(sent, [True])
+            out = proc.communicate(timeout=5)[0]
+            self.assertIn("ENVIADO", out)
             end = time.time() + 8
             while time.time() < end and len(w.lib.items) < 2:
                 pump(50)
