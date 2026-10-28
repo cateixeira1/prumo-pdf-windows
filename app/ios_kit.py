@@ -1050,6 +1050,47 @@ def action_sheet(window: QWidget, title: str, message: str = "", actions=(), can
     return ov.run()
 
 
+class BusyOverlay(_Overlay):
+    """Aviso de trabalho em andamento (ex.: "Convertendo 2 de 5…"), sem botões."""
+
+    def __init__(self, window: QWidget, title: str):
+        super().__init__(window.window(), 320)
+        box = QVBoxLayout()
+        box.setContentsMargins(22, 22, 22, 22)
+        box.setSpacing(12)
+        self.title = QLabel(title)
+        self.title.setFont(font(16, 600))
+        self.title.setAlignment(Qt.AlignCenter)
+        self.title.setWordWrap(True)
+        self.title.setStyleSheet(f"color: {T.hex('text')}; background: transparent;")
+        self.detail = QLabel("")
+        self.detail.setFont(font(13))
+        self.detail.setAlignment(Qt.AlignCenter)
+        self.detail.setWordWrap(True)
+        self.detail.setStyleSheet(f"color: {T.hex('secondary')}; background: transparent;")
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 0)   # indeterminada até saber o total
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(6)
+        box.addWidget(self.title)
+        box.addWidget(self.detail)
+        box.addWidget(self.bar)
+        self.lay.addLayout(box)
+
+    def mousePressEvent(self, e):
+        pass   # não fecha ao clicar fora
+
+    def keyPressEvent(self, e):
+        pass   # nem com Esc: o trabalho está rodando
+
+    def set_progress(self, done: int, total: int, detail: str):
+        if total:
+            self.bar.setRange(0, total)
+            self.bar.setValue(done)
+        self.detail.setText(detail)
+        self._place()
+
+
 class SheetOverlay(_Overlay):
     """Painel maior (tela modal), para escolher pasta, dividir etc."""
 

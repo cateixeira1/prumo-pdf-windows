@@ -358,6 +358,10 @@ class HomeScreen(Screen):
         hb.addWidget(self.folders)
         hb.addWidget(SectionTitle("Ferramentas"))
         hb.addWidget(self.tools)
+        self.convert = WideTile("Converter em PDF", "convert", "teal",
+                                subtitle="Fotos e imagens (JPG, PNG, HEIC do iPhone), Word, Excel, PowerPoint, texto")
+        self.convert.clicked.connect(lambda: app.convert_dialog(""))
+        hb.addWidget(self.convert)
         self.content.addWidget(self.home_box)
         self.results_box = QWidget()
         self.results = QVBoxLayout(self.results_box)
@@ -551,6 +555,7 @@ class DocumentGridScreen(Screen):
             m.addSeparator()
             menu_action(m, "Adicionar PDFs…", "plus", lambda: add_pdfs_to_folder(self.app, self.folder))
             menu_action(m, "Importar do computador…", "import", lambda: self.app.import_dialog(self.folder))
+            menu_action(m, "Converter em PDF aqui…", "convert", lambda: self.app.convert_dialog(self.folder))
             if self.folder:
                 menu_action(m, "Nova subpasta", "folderplus", lambda: new_folder_flow(self.app, self.folder))
             menu_action(m, "Mostrar no Explorador", "explorer",
@@ -627,7 +632,7 @@ class DocumentGridScreen(Screen):
             self.content.addWidget(w)
         if self.folder is not None and not q and not self.selecting:
             add = WideTile("Adicionar PDFs", "plus", "blue",
-                           subtitle="Do computador ou de outra parte do Prumo (outra pasta, Todos os PDFs…)")
+                           subtitle="Do computador (PDFs, fotos, Word…) ou de outra parte do Prumo")
             add.clicked.connect(lambda: add_pdfs_to_folder(app, self.folder))
             self.content.addWidget(add)
         subs = lib.subfolders(self.folder) if self.folder and not q else []
@@ -1445,7 +1450,7 @@ def choose_documents(app, title, multiple=False, excluding=frozenset(), allow_im
     wrap.setSpacing(10)
     if allow_import:
         comp = WideTile("Do computador…", "computer", "blue",
-                        subtitle="Escolher no Windows (Documentos, Downloads, pendrive, OneDrive…)")
+                        subtitle="PDF, foto, Word, Excel… (o que não for PDF é convertido na hora)")
         comp.clicked.connect(lambda: ov.done("import"))
         wrap.addWidget(comp)
         wrap.addWidget(SectionTitle("Ou escolha no Prumo"))

@@ -211,15 +211,21 @@ class MainWindow(QMainWindow):
 
     def pick_and_import(self, folder: str = "", multiple: bool = True):
         """Escolhe PDFs no Windows, copia para a biblioteca e devolve os itens."""
+        import convert
         start = self.setting("import_dir", str(Path.home() / "Documents"))
         if multiple:
-            files, _ = QFileDialog.getOpenFileNames(self, "Escolher PDFs no computador", start, "PDF (*.pdf)")
+            files, _ = QFileDialog.getOpenFileNames(self, "Escolher PDFs no computador", start, convert.dialog_filter())
         else:
-            f, _ = QFileDialog.getOpenFileName(self, "Escolher PDF no computador", start, "PDF (*.pdf)")
+            f, _ = QFileDialog.getOpenFileName(self, "Escolher PDF no computador", start, convert.dialog_filter())
             files = [f] if f else []
         if not files:
             return []
         self.set_setting("import_dir", str(Path(files[0]).parent))
+        converted = []
+        others = [f for f in files if convert.is_convertible(f)]
+        if others:
+            converted = self.convert_files(others, folder, offer_ocr=False)
+            files = [f for f in files if f not in others]
         root = self.lib.root.resolve()
         inside, outside = [], []
         for f in files:
@@ -233,6 +239,127 @@ class MainWindow(QMainWindow):
         if outside and self.attempt(lambda: res.setdefault("items", self.lib.import_files(outside, folder)),
                                     busy="Importando…"):
             items.extend(res["items"])
+        return items + converted
+
+    # --- converter outros arquivos em PDF ---
+    def convert_dialog(self, folder: str = ""):
+        import convert
+        start = self.setting("import_dir", str(Path.home() / "Documents"))
+        flt = convert.dialog_filter().replace("PDF e arquivos para converter", "Arquivos para converter", 1)
+        files, _ = QFileDialog.getOpenFileNames(self, "Converter em PDF", start, flt)
+        if not files:
+            return []
+        self.set_setting("import_dir", str(Path(files[0]).parent))
+        pdfs = [f for f in files if f.lower().endswith(".pdf")]
+        if pdfs:
+            self.import_paths(pdfs, folder)
+        return self.convert_files([f for f in files if not f.lower().endswith(".pdf")], folder)
+
+    def run_with_progress(self, title: str, fn):
+        """Roda `fn(progress)` numa linha separada, com o aviso "Convertendo…" na tela."""
+        import threading
+
+        from PySide6.QtCore import QEventLoop
+        from ios_kit import BusyOverlay
+
+        ov = BusyOverlay(self, title)
+        state = {"done": False, "result": None, "error": None, "p": (0, 0, "")}
+
+        def progress(i, total, name):
+            state["p"] = (i - 1, total, name)
+
+        def work():
+            try:
+                state["result"] = fn(progress)
+            except BaseException as exc:  # noqa: BLE001
+                state["error"] = exc
+            finally:
+                state["done"] = True
+
+        ov._place()
+        ov.show()
+        ov.raise_()
+        t = threading.Thread(target=work, daemon=True)
+        t.start()
+        while not state["done"]:
+            i, total, name = state["p"]
+            ov.set_progress(i, total, f"{i + 1} de {total}: {name}" if total > 1 else name)
+            loop = QEventLoop()
+            QTimer.singleShot(60, loop.quit)
+            loop.exec()
+        self.removeEventFilter(ov)
+        ov.hide()
+        ov.deleteLater()
+        if state["error"] is not None:
+            raise state["error"]
+        return state["result"]
+
+    def convert_files(self, paths, folder: str = "", offer_ocr: bool = True) -> list:
+        """Converte arquivos em PDF e guarda na biblioteca (na pasta `folder`). Devolve os novos itens."""
+        import time as _time
+
+        import convert
+        paths = [Path(p) for p in paths if convert.is_convertible(p)]
+        if not paths:
+            return []
+        images = [p for p in paths if convert.kind(p) == "image"]
+        combine, name = False, None
+        if len(images) > 1:
+            idx = alert(self, f"{len(images)} imagens",
+                        "Juntar todas num PDF só (uma imagem por página, na ordem escolhida) ou criar um PDF "
+                        "para cada imagem?",
+                        [("Um PDF só", "default"), ("Um PDF para cada", "default"), ("Cancelar", "cancel")])
+            if idx is None or idx == 2:
+                return []
+            combine = idx == 0
+            if combine:
+                default = _time.strftime("Imagens %d-%m-%Y %Hh%M")
+                ans, text = alert(self, "Nome do PDF", "", [("Cancelar", "cancel"), ("Criar", "default")],
+                                  text=default, placeholder="Nome")
+                if ans != 1:
+                    return []
+                name = text.strip() or default
+        title = "Convertendo em PDF…"
+        try:
+            res = self.run_with_progress(title, lambda progress: convert.convert(
+                paths, combine_images=combine, combined_name=name, work_dir=self.lib.temp_path().with_suffix(""),
+                progress=progress))
+        except Exception as exc:  # noqa: BLE001
+            self.show_error(f"{type(exc).__name__}: {exc}")
+            return []
+        items, image_items = [], []
+        for tmp, nm, k in zip(res.created, res.names, res.kinds):
+            try:
+                it = self.lib.adopt(tmp, nm, folder)
+            except Exception as exc:  # noqa: BLE001
+                res.failed.append((nm, str(exc)))
+                continue
+            items.append(it)
+            if k == "images":
+                image_items.append(it)
+        if res.failed:
+            lines = "\n".join(f"• {n}: {m}" for n, m in res.failed[:6])
+            more = f"\n… e mais {len(res.failed) - 6}." if len(res.failed) > 6 else ""
+            alert(self, "Alguns arquivos não foram convertidos" if items else "Não foi possível converter",
+                  lines + more, [("OK", "default")])
+        if not items:
+            return []
+        msg = (f"PDF criado: {items[0].name}" if len(items) == 1 else f"{len(items)} PDFs criados")
+        if res.simplified:
+            msg += ". Sem o Word instalado, a conversão foi simplificada: o layout pode mudar."
+        if offer_ocr and image_items:
+            idx = alert(self, "Usar OCR agora?",
+                        "Fotos e imagens viram páginas sem texto selecionável. O OCR cria um novo PDF com o texto "
+                        "pesquisável, com “OCR” no nome. O PDF da imagem continua salvo.",
+                        [("Mais tarde", "cancel"), ("Sim", "default")])
+            for it in image_items:
+                if idx == 1:
+                    self.start_ocr(it, quiet=True)
+                else:
+                    self.lib.set_pending_ocr(it, True)
+        first = items[0]
+        self.toast(msg, "Abrir" if len(items) == 1 else None,
+                   (lambda: self.open_document(first.id)) if len(items) == 1 else None)
         return items
 
     def copy_files(self, paths):
@@ -264,22 +391,30 @@ class MainWindow(QMainWindow):
                 self.toast(f"{len(items)} cópias exportadas.", "Mostrar", lambda: self.reveal(folder))
 
     def import_dialog(self, folder: str = ""):
+        import convert
         start = self.setting("import_dir", str(Path.home() / "Documents"))
-        files, _ = QFileDialog.getOpenFileNames(self, "Importar PDFs", start, "PDF (*.pdf)")
+        files, _ = QFileDialog.getOpenFileNames(self, "Importar PDFs (ou arquivos para converter)", start,
+                                                convert.dialog_filter())
         if files:
             self.set_setting("import_dir", str(Path(files[0]).parent))
             self.import_paths(files, folder)
 
     def import_paths(self, paths, folder: str = ""):
-        pdfs = []
+        import convert
+        pdfs, others = [], []
         for p in paths:
             p = Path(p)
             if p.is_dir():
                 pdfs.extend(sorted(p.glob("*.pdf")))
             elif p.suffix.lower() == ".pdf":
                 pdfs.append(p)
+            elif convert.is_convertible(p):
+                others.append(p)
+        if others:
+            self.convert_files(others, folder)
         if not pdfs:
-            self.toast("Nenhum PDF para importar.")
+            if not others:
+                self.toast("Nenhum PDF (ou arquivo que dê para converter) para importar.")
             return
         root = self.lib.root.resolve()
         inside = [p for p in pdfs if root in p.resolve().parents]
@@ -299,7 +434,9 @@ class MainWindow(QMainWindow):
         return f() if f else ""
 
     def dragEnterEvent(self, e):
+        import convert
         if e.mimeData().hasUrls() and any(u.toLocalFile().lower().endswith(".pdf") or os.path.isdir(u.toLocalFile())
+                                          or convert.is_convertible(u.toLocalFile())
                                           for u in e.mimeData().urls()):
             e.acceptProposedAction()
 

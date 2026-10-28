@@ -221,6 +221,8 @@ GLYPHS = {
     "rotate_right": '<path d="M19.5 4.5v5h-5"/><path d="M19 9.5a7.5 7.5 0 1 0-1.6 7.6"/>',
     "zoom_in": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20.5 20.5M8 10.5h5M10.5 8v5"/>',
     "zoom_out": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20.5 20.5M8 10.5h5"/>',
+    "convert": '<path d="M5 3.5h6l3 3v6"/><path d="M11 3.5v3h3"/><path d="M13 13.5h6.5M17 11l2.5 2.5L17 16"/>'
+               '<rect x="5" y="15" width="8" height="5.5" rx="1"/><path d="M7 17.8h4"/>',
     "computer": '<rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6M12 16.5V20"/>',
     "library": '<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/>'
                '<path d="M16.2 5.2l3.6-.9 3 15.2-3.6.9z" transform="translate(-2 0)"/>',
