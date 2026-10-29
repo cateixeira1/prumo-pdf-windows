@@ -85,13 +85,15 @@ jobs:
 
       - name: Publicar o instalador na página de versões
         if: steps.build.outcome == 'success' && steps.test.outcome == 'success'
-        shell: powershell
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $setup = Get-ChildItem "dist\PrumoPDF_Setup_*.exe" | Select-Object -First 1
-          gh release delete ultima-versao -y --cleanup-tag 2>$null
-          gh release create ultima-versao $setup.FullName `
-            --title "Prumo PDF para Windows (última versão)" `
-            --notes "Baixe o $($setup.Name) e dê dois cliques para instalar. Gerado do commit $($env:GITHUB_SHA.Substring(0,7))." `
+          setup=$(ls dist/PrumoPDF_Setup_*.exe | head -1)
+          # Na primeira vez ainda não existe versão anterior para apagar.
+          gh release delete ultima-versao -y --cleanup-tag 2>/dev/null || true
+          gh release create ultima-versao "$setup" \
+            --target "$GITHUB_SHA" \
+            --title "Prumo PDF para Windows (última versão)" \
+            --notes "Baixe o $(basename "$setup") e dê dois cliques para instalar. Gerado do commit ${GITHUB_SHA::7}." \
             --latest
