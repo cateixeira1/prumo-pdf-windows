@@ -312,6 +312,9 @@ class MainWindow(QMainWindow):
         if self.jobs.is_busy(item.id):
             self.toast("Espere o OCR deste PDF terminar para organizar as páginas.")
             return
+        from screens import blocked_signed
+        if blocked_signed(self, self.lib.item(item.id) or item):
+            return
         self.push(OrganizeScreen(self, item.id))
 
     def pick_and_import(self, folder: str = "", multiple: bool = True):

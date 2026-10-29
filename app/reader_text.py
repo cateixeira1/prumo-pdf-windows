@@ -95,20 +95,54 @@ def _is_title(line: str) -> bool:
     return len(letters) >= 3 and all(c.isupper() for c in letters) and len(line) <= 90
 
 
-def reflow(text: str) -> list[str]:
-    """Linhas de uma página → parágrafos."""
-    lines = [re.sub(r"[ \t ]+", " ", ln).strip() for ln in re.split(r"\r\n|\r|\n", text)]
-    if not any(lines):
+_SPACES = re.compile(r"[ \t\xa0]+")
+
+
+def _clean_line(line: str, start: int) -> tuple[str, list[int]]:
+    """Uma linha com os espaços repetidos trocados por um só e sem espaços nas pontas,
+    com a posição de cada caractere no texto da página."""
+    out: list[str] = []
+    idx: list[int] = []
+    pos = 0
+    for m in _SPACES.finditer(line):
+        for k in range(pos, m.start()):
+            out.append(line[k])
+            idx.append(start + k)
+        out.append(" ")
+        idx.append(start + m.start())
+        pos = m.end()
+    for k in range(pos, len(line)):
+        out.append(line[k])
+        idx.append(start + k)
+    text = "".join(out)
+    lead = len(text) - len(text.lstrip())
+    trail = len(text.rstrip())
+    return text[lead:trail], idx[lead:trail]
+
+
+def reflow_mapped(text: str) -> list[tuple[str, list[int]]]:
+    """
+    Linhas de uma página → parágrafos, cada um com a posição (no texto da página) de cada
+    caractere; espaços criados ao juntar linhas ficam com -1. Usado pelo modo leitor para
+    destacar no PDF o trecho escolhido no texto corrido.
+    """
+    lines: list[tuple[str, list[int]]] = []
+    pos = 0
+    for m in re.finditer(r"\r\n|\r|\n", text):
+        lines.append(_clean_line(text[pos:m.start()], pos))
+        pos = m.end()
+    lines.append(_clean_line(text[pos:], pos))
+    if not any(t for t, _ in lines):
         return []
-    longest = max((len(l) for l in lines if l), default=0)
-    paras: list[str] = []
-    cur = ""
+    longest = max((len(t) for t, _ in lines if t), default=0)
+    paras: list[tuple[str, list[int]]] = []
+    cur, cur_idx = "", []
     prev = ""
-    for line in lines:
+    for line, idx in lines:
         if not line:
             if cur:
-                paras.append(cur)
-                cur = ""
+                paras.append((cur, cur_idx))
+                cur, cur_idx = "", []
             prev = ""
             continue
         both_titles = _is_title(prev) and _is_title(line) and not SENTENCE_END.search(prev)
@@ -118,17 +152,22 @@ def reflow(text: str) -> list[str]:
                     or len(prev) < 0.5 * longest)   # só a última linha de um parágrafo é curta
         if new_para:
             if cur:
-                paras.append(cur)
-            cur = line
+                paras.append((cur, cur_idx))
+            cur, cur_idx = line, list(idx)
         else:
             if re.search(r"[A-Za-zÀ-ÿ]-$", cur) and line[:1].islower():
-                cur = cur[:-1] + line          # palavra hifenizada no fim da linha
+                cur, cur_idx = cur[:-1] + line, cur_idx[:-1] + list(idx)   # palavra hifenizada no fim da linha
             else:
-                cur = f"{cur} {line}"
+                cur, cur_idx = f"{cur} {line}", cur_idx + [-1] + list(idx)
         prev = line
     if cur:
-        paras.append(cur)
+        paras.append((cur, cur_idx))
     return paras
+
+
+def reflow(text: str) -> list[str]:
+    """Linhas de uma página → parágrafos."""
+    return [t for t, _ in reflow_mapped(text)]
 
 
 @dataclass
@@ -342,6 +381,35 @@ class TextLayer:
         _page, tp, *_ = self._entry(i)
         with core.PDFIUM_LOCK:
             return tp.get_text_range(a, b - a) or ""
+
+    def page_text(self, i: int) -> str:
+        """Texto da página inteira; a posição de cada letra é o número do caractere no PDF."""
+        return self._entry(i)[4]
+
+    def chars_in(self, i: int, rects) -> list[int]:
+        """Caracteres da página i cujo centro cai num dos retângulos (na tela, em pontos)."""
+        boxes = self._entry(i)[3]
+        out = []
+        for k, box in enumerate(boxes):
+            if box is None:
+                continue
+            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            for x0, y0, x1, y1 in rects:
+                if x0 - 0.5 <= cx <= x1 + 0.5 and y0 - 0.5 <= cy <= y1 + 0.5:
+                    out.append(k)
+                    break
+        return out
+
+
+def runs(indices) -> list[tuple[int, int]]:
+    """Posições soltas → trechos contínuos [(início, fim)), fim exclusivo."""
+    out: list[tuple[int, int]] = []
+    for k in sorted(set(indices)):
+        if out and out[-1][1] == k:
+            out[-1] = (out[-1][0], k + 1)
+        else:
+            out.append((k, k + 1))
+    return out
 
 
 def clean_excerpt(text: str) -> str:

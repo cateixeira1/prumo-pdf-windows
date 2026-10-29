@@ -10,3 +10,5 @@ mammoth>=1.8           # .docx em PDF sem o Word (conversão simplificada)
 pillow-heif>=0.18      # fotos HEIC do iPhone
 onnxruntime>=1.20        # correção de páginas curvas (modelo UVDoc, roda no computador)
 numpy>=1.26
+pyhanko==0.38.0          # assinatura digital de PDF (PAdES), licença MIT
+tzdata>=2024.1           # fuso horário no Windows (usado pelo pyHanko)

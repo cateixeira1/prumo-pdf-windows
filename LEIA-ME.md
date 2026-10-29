@@ -7,13 +7,15 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **Pastas:** ao criar uma, já dá para adicionar PDFs do computador ou de qualquer parte do Prumo (outra pasta, Todos os PDFs, Favoritos…), movendo ou copiando.
 - **Leitor próprio**, com zoom e troca entre o original e a cópia com OCR, sem precisar abrir outro programa:
   - **à esquerda, as miniaturas das páginas** (como no Word): rolam com o mouse e um clique leva à página;
-  - **seleção de texto com o mouse** (dois cliques selecionam a palavra; Ctrl+C copia);
-  - **à direita, o painel**: cores de destaque (amarelo, verde, azul, rosa e laranja), borracha e botões para todas as funções do app. Escolha a cor e arraste sobre o texto. O destaque fica gravado no próprio PDF, como anotação padrão, e aparece no Adobe, no Edge, no Chrome e no iPhone. Ctrl+Z desfaz o último; o botão direito sobre um destaque apaga ou muda a cor;
+  - **seleção de texto com o mouse** (dois cliques selecionam a palavra; Ctrl+C copia). Ao soltar o mouse, aparece uma **barrinha como a do Word**: **Destacar** (passando o mouse, abrem todas as cores; a lista fica aberta enquanto o mouse estiver no botão ou nas cores e some ao escolher uma), **Copiar**, **Tirar destaque** (só aparece se parte do trecho já estiver destacada) e **Adicionar ao resumo**;
+  - **botão direito arrastado sobre o texto** destaca com a última cor usada (amarelo, se ainda não escolheu nenhuma). Um clique simples com o botão direito, sem arrastar, continua abrindo o menu;
+  - **desfazer e refazer:** as setas ← e → no alto, logo depois da divisória das miniaturas (ou Ctrl+Z e Ctrl+Y / Ctrl+Shift+Z), desfazem e refazem destaques, troca de cor, trechos levados ao resumo e, quando feitos pelo leitor, corte, giro, numeração e inclusão de páginas;
+  - **à direita, o painel**: cores de destaque (amarelo, verde, azul, rosa e laranja), borracha e botões para todas as funções do app. Escolha a cor e arraste sobre o texto. O destaque fica gravado no próprio PDF, como anotação padrão, e aparece no Adobe, no Edge, no Chrome e no iPhone. O botão direito sobre um destaque apaga ou muda a cor;
   - **Adicionar ao resumo deste PDF**: o trecho selecionado vai para “Nome - resumo.pdf”, na mesma pasta, com “Trecho extraído da página 10” (ou “das páginas 10-11”) embaixo, em letra menor. Cada trecho novo entra no fim do mesmo resumo.
 - **Cortar e girar páginas:** a página aparece inteira com uma moldura que se arrasta pelas bordas (ou margens em milímetros, ou “Margens automáticas”); girar 90° ou 180°; vale para esta página, todas, pares, ímpares ou um trecho. O corte usa o recorte padrão do PDF: nada é apagado, e “Página inteira” desfaz.
 - **Numerar páginas:** seis posições, formatos “1”, “Página 1”, “Página 1 de 12”, “1/12” e “- 1 -”, número inicial, a partir de qual página e tamanho da letra. O número vira texto de verdade na página.
 - **Seleção com o mouse:** clicar e arrastar desenha um retângulo que seleciona vários PDFs (nas listas, nas pastas e ao escolher PDFs) ou várias páginas (Remover, Extrair e Organizar). Ctrl soma à seleção.
-- **Modo leitor:** só o texto (do OCR ou do próprio PDF), em parágrafos, numa coluna confortável; letra maior ou menor (A−/A+), fonte com ou sem serifa e fundo branco, sépia ou escuro; copiar trechos ou o texto todo. Páginas com baixa confiança no OCR aparecem marcadas.
+- **Modo leitor (Texto):** só o texto (do OCR ou do próprio PDF), em parágrafos, numa coluna confortável; letra maior ou menor (A−/A+), fonte com ou sem serifa e fundo branco, sépia ou escuro. Tem as mesmas funções do modo Página: miniaturas, barrinha de seleção, cores e borracha, botão direito arrastado, desfazer e refazer, resumo, busca e o painel com todas as ferramentas. Os destaques feitos no texto vão para o PDF e aparecem também no modo Página (e vice-versa). Páginas com baixa confiança no OCR aparecem marcadas.
 - **Busca dentro do PDF (Ctrl+F)**, nas páginas e no modo leitor: não precisa de acentos nem maiúsculas (“indenizacao” acha “Indenização”), destaca todas as ocorrências e anda entre elas com Enter / Shift+Enter ou F3.
 - **Organizar páginas:** arraste para mudar a ordem (a lista rola sozinha perto das bordas), gire, exclua, desfaça; Ctrl+roda do mouse muda o tamanho das miniaturas. Para ler uma página, clique na lupa que aparece sobre ela (ou dois cliques, ou Espaço): ela abre grande ali mesmo, já com o giro, e as setas passam para as outras.
 - **Incluir páginas** de outro PDF (ou do próprio): todas ou trechos como 5-15, no início, no fim ou depois de uma página.
@@ -23,6 +25,7 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **OCR em português:** só as páginas em imagem passam pelo OCR; páginas que já têm texto ficam como estão. O resultado é uma cópia com “- OCR” no nome, na mesma pasta. Páginas com baixa confiança são marcadas para revisão.
 - **Remover, extrair, dividir em partes iguais e combinar.** Na divisão, um PDF de 200 páginas em 4 partes vira “Nome - Parte 1” a “Parte 4”.
 - **Desfazer** a última alteração de páginas de cada PDF.
+- **Assinatura digital (PAdES):** na tela do PDF, **Assinar digitalmente**, com certificado **A1** (arquivo .pfx ou .p12, guardado no Prumo; a senha é pedida a cada assinatura e não fica gravada) ou **A3** (token ou cartão: com o programa do fabricante instalado, o certificado aparece no Windows e o próprio programa pede o PIN). A assinatura pode aparecer como carimbo na página (primeira ou última, em um dos cantos) ou ficar invisível. **Depois de assinado, o PDF não pode mais ser alterado**: qualquer mudança (destaque, corte, numeração, páginas) invalida a assinatura. Por isso o Prumo assina uma cópia, “Nome - assinado”, e deixa o original como está; na cópia, as ferramentas de edição ficam desligadas e o cartão mostra “Assinado”. Uma segunda pessoa pode assinar a mesma cópia: a nova assinatura entra no próprio arquivo e as anteriores continuam válidas. A primeira assinatura é de certificação (permite só novas assinaturas), o que o Adobe Reader e o Verificador de Conformidade do ITI (validar.iti.gov.br) conseguem conferir. Os certificados ficam em Ajustes › Assinatura digital.
 - **Compartilhar:** copiar o arquivo para colar (Ctrl+V) no WhatsApp ou no e-mail, exportar uma cópia ou mostrar no Explorador.
 
 Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá para mudar em Ajustes).
@@ -36,7 +39,7 @@ A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.9.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.10.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
@@ -88,8 +91,12 @@ app/            código do aplicativo (Python + PySide6)
   app_window.py   janela principal, navegação, avisos e fila de OCR
   screens.py      telas no estilo do iPhone
   ios_theme.py    cores, fontes e ícones; ios_kit.py: cartões, busca, alertas
-  reader.py       leitor: miniaturas, páginas, seleção de texto, destaques e painel de ferramentas
+  reader.py       leitor (modos Página e Texto): miniaturas, seleção, destaques e painel de ferramentas
+  reader_select.py barrinha que aparece ao selecionar texto (cores, copiar, tirar destaque, resumo)
+  reader_history.py desfazer e refazer no leitor (cópias do arquivo antes e depois de cada mudança)
   reader_text.py  texto das páginas (busca, modo leitor, posições para selecionar)
+  signing.py      assinatura digital PAdES (A1 em .pfx e A3/A1 do Windows, com o pyHanko)
+  sign_ui.py      telas de assinar e a seção “Assinatura digital” dos Ajustes
   annotations.py  destaques gravados no PDF (anotações /Highlight)
   summary.py      “Adicionar ao resumo” (Nome - resumo.pdf; trechos em .prumo/resumos)
   page_tools.py   cortar, girar e numerar páginas (as contas ficam em pdfops.py)
@@ -126,5 +133,6 @@ Os critérios de classificação de página (quantidade mínima de texto, cobert
 | fpdf2 | texto, HTML e .docx em PDF com texto selecionável | LGPL v3 |
 | UVDoc (Verhoeven, Magne, Sorkine-Hornung, SIGGRAPH Asia 2023) | modelo de correção de páginas curvas (models/uvdoc.onnx, exportado do original) | MIT |
 | ONNX Runtime, NumPy | roda o modelo UVDoc no computador | MIT, BSD-3 |
+| pyHanko | assinatura digital PAdES | MIT |
 
 O Ghostscript **não** é usado: desde a versão 17, o OCRmyPDF consegue trabalhar sem ele.

@@ -378,6 +378,8 @@ class DocTile(TileBase):
         out = []
         if getattr(m, "locked", False):
             out.append(("Com senha", "purple"))
+        if getattr(m, "signed", 0):
+            out.append(("Assinado", "blue"))
         if m.is_ocr_result:
             out.append(("OCR", "green"))
         if m.review_pages:
@@ -726,13 +728,20 @@ class CircleButton(QAbstractButton):
         p.setBrush(T.color("shadow"))
         p.drawEllipse(r.translated(0, 1))
         bg = QColor(T.color("panel"))
-        if self.isDown():
+        enabled = self.isEnabled()
+        if enabled and self.isDown():
             bg = bg.darker(110)
-        elif self.underMouse():
+        elif enabled and self.underMouse():
             bg = bg.darker(104) if not T.dark else bg.lighter(120)
         p.setBrush(bg)
         p.drawEllipse(r)
-        paint_glyph(p, r.adjusted(10, 10, -10, -10), self.glyph, T.color("text"), 2)
+        paint_glyph(p, r.adjusted(10, 10, -10, -10), self.glyph,
+                    T.color("text") if enabled else T.color("placeholder"), 2)
+
+    def changeEvent(self, e):
+        super().changeEvent(e)
+        if e.type() == e.Type.EnabledChange:
+            self.update()
 
 
 class TextButton(QAbstractButton):

@@ -169,7 +169,41 @@ def apply_screen(win, screen: str):
         def select_some():
             if r.text is not None and r.text.char_count(0) > 140:
                 r.view.select_range((0, 40), (0, 140))
+                r.selection_done()          # a barra de seleção, com as cores abertas
+                r.selbar._open_popup()
         QTimer.singleShot(500, select_some)
+    elif screen == "readertext":
+        from reader import TextReaderScreen
+        t = TextReaderScreen(win, pet.id)
+        win.push(t)
+
+        def mark_some():
+            c = t.browser.textCursor()
+            if len(t.segs) > 1:
+                a = t.segs[1][0]
+                c.setPosition(a + 2)
+                c.setPosition(a + 60, c.MoveMode.KeepAnchor)
+                t.browser.setTextCursor(c)
+                t.highlight_selection("green")
+                c = t.browser.textCursor()
+                b = t.segs[2][0] if len(t.segs) > 2 else a
+                c.setPosition(b)
+                c.setPosition(b + 70, c.MoveMode.KeepAnchor)
+                t.browser.setTextCursor(c)
+                t.selection_done()
+        QTimer.singleShot(500, mark_some)
+    elif screen == "sign":
+        import os
+        import tempfile
+        os.environ["PRUMO_CERT_DIR"] = tempfile.mkdtemp(prefix="prumo_cert_demo_")
+        import signing
+        pfx = Path(os.environ["PRUMO_CERT_DIR"]) / "demo.pfx"
+        pfx.write_bytes(demo_pfx("ANA DE SOUZA", "demo"))
+        signing.import_a1(pfx, "demo")
+        pfx.unlink()
+        import sign_ui
+        win.push(DocumentScreen(win, pet.id))
+        QTimer.singleShot(300, lambda: sign_ui.sign_dialog(win, pet))
     elif screen == "crop":
         import page_tools
         win.push(DocumentScreen(win, pet.id))
@@ -180,3 +214,29 @@ def apply_screen(win, screen: str):
         QTimer.singleShot(300, lambda: page_tools.number_dialog(win, pet))
     elif screen == "lock":
         win.lock.show_lock()
+
+
+def demo_pfx(name: str, password: str) -> bytes:
+    """Certificado de teste (autoassinado), só para as capturas de tela e os testes."""
+    import datetime as dt
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "BR"),
+                         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Teste"),
+                         x509.NameAttribute(NameOID.COMMON_NAME, name)])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - dt.timedelta(days=1))
+            .not_valid_after(now + dt.timedelta(days=365))
+            .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=True, key_encipherment=False,
+                                         data_encipherment=False, key_agreement=False, key_cert_sign=False,
+                                         crl_sign=False, encipher_only=False, decipher_only=False), critical=True)
+            .sign(key, hashes.SHA256()))
+    return pkcs12.serialize_key_and_certificates(b"demo", key, cert, None,
+                                                 serialization.BestAvailableEncryption(password.encode()))

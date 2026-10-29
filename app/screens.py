@@ -386,6 +386,7 @@ class HomeScreen(Screen):
         add(t, "merge", "Combinar PDFs", "stack", "purple", True, lambda: app.push(MergeScreen(app)))
         add(t, "crop", "Cortar e girar", "crop", "indigo", True, lambda: self._tool("crop"))
         add(t, "number", "Numerar páginas", "numbers", "indigo", False, lambda: self._tool("number"))
+        add(t, "sign", "Assinar digitalmente", "signature", "blue", True, lambda: self._tool("sign"))
 
         self.folders = WideTile("Pastas", "folder", "indigo")
         self.folders.clicked.connect(lambda: app.push(FoldersScreen(app)))
@@ -418,7 +419,7 @@ class HomeScreen(Screen):
                    "organize": "Organizar qual PDF?", "insert": "Incluir páginas em qual PDF?",
                    "remove": "Remover páginas de qual PDF?", "extract": "Extrair páginas de qual PDF?",
                    "split": "Dividir qual PDF?", "crop": "Cortar ou girar páginas de qual PDF?",
-                   "number": "Numerar as páginas de qual PDF?"}
+                   "number": "Numerar as páginas de qual PDF?", "sign": "Assinar qual PDF?"}
 
     def _tool(self, key):
         run_tool(self.app, key, self.TOOL_TITLES[key])
@@ -452,6 +453,19 @@ class HomeScreen(Screen):
                 self.results.addWidget(g)
 
 
+SIGNED_EDIT_MSG = ("Este PDF está assinado digitalmente: qualquer alteração invalidaria a assinatura. Use o "
+                   "original (sem assinatura) para mudar páginas, cortar, numerar ou destacar.")
+EDIT_TOOLS = {"organize", "insert", "remove", "crop", "number", "dewarp", "protect"}
+
+
+def blocked_signed(app, item) -> bool:
+    """PDF assinado não pode ser alterado: avisa e devolve True."""
+    if item is not None and getattr(item.meta, "signed", 0):
+        app.toast(SIGNED_EDIT_MSG)
+        return True
+    return False
+
+
 def run_tool(app, key, title):
     """Escolhe o PDF (do computador ou da biblioteca) e abre a ferramenta pedida."""
     multiple = key == "ocr"
@@ -460,6 +474,8 @@ def run_tool(app, key, title):
     if not picked:
         return
     item = picked[0]
+    if key in EDIT_TOOLS and blocked_signed(app, item):
+        return
     if key == "read":
         app.read(item)
     elif key == "ocr":
@@ -486,6 +502,9 @@ def run_tool(app, key, title):
     elif key == "number":
         import page_tools
         page_tools.number_dialog(app, item)
+    elif key == "sign":
+        import sign_ui
+        sign_ui.sign_dialog(app, item)
 
 
 # --- Listas e pastas ------------------------------------------------------------
@@ -864,7 +883,9 @@ class DocHeader(QWidget):
         if it.meta.is_ocr_result:
             bx += paint_badge(p, bx, y, "OCR", T.color("green")) + 4
         if it.meta.locked:
-            paint_badge(p, bx, y, "Com senha", T.color("purple"))
+            bx += paint_badge(p, bx, y, "Com senha", T.color("purple")) + 4
+        if getattr(it.meta, "signed", 0):
+            paint_badge(p, bx, y, "Assinado digitalmente", T.color("blue"))
 
 
 class DocumentScreen(Screen):
@@ -890,6 +911,21 @@ class DocumentScreen(Screen):
         self.set_title(item.name)
         self.big_title.hide()
         self.content.addWidget(DocHeader(app, item))
+        if getattr(item.meta, "signed", 0):
+            import signing
+            card = TileCard()
+            row = QHBoxLayout()
+            ic = Label("")
+            ic.setPixmap(glyph_icon("signature", T.color("blue"), 20).pixmap(20, 20))
+            ic.setFixedWidth(24)
+            row.addWidget(ic, 0, Qt.AlignTop)
+            who = signing.describe_signatures(item.path)
+            lines = "; ".join(f"{s['name']}" + (f", em {s['when']}" if s["when"] else "") for s in who)
+            row.addWidget(Label(("Assinado digitalmente" + (f" por {lines}" if lines else "") + ". O PDF não pode "
+                                 "ser alterado sem invalidar a assinatura. Para conferir a validade, abra no "
+                                 "Adobe Reader ou em validar.iti.gov.br."), 13.5), 1)
+            card.lay.addLayout(row)
+            self.content.addWidget(card)
         if item.meta.review_pages:
             card = TileCard()
             row = QHBoxLayout()
@@ -941,27 +977,34 @@ class DocumentScreen(Screen):
              subtitle="Copiar, exportar, Explorador")
         tile("OCR", "textscan", "orange", lambda: self._ocr(item), count=self._ocr_count(item),
              subtitle=self._ocr_subtitle(item, busy), rounded=True)
-        tile("Organizar páginas", "grid", "purple", lambda: app.organize(item),
-             count=str(pages) if pages else None, subtitle="Arrastar, girar, excluir", rounded=True)
-        tile("Incluir páginas", "plusrect", "teal", lambda: include_pages_dialog(app, item),
-             subtitle="De outro PDF ou do computador", rounded=True)
-        tile("Remover páginas", "minusrect", "red", lambda: app.push(PagePickerScreen(app, item.id, "remove")),
-             rounded=True)
+        signed = bool(getattr(item.meta, "signed", 0))
+
+        def edit(fn):
+            return lambda: None if blocked_signed(app, lib.item(item.id) or item) else fn()
+
+        tile("Organizar páginas", "grid", "purple", edit(lambda: app.organize(item)),
+             count=str(pages) if pages else None, subtitle="Arrastar, girar, excluir", rounded=True, dimmed=signed)
+        tile("Incluir páginas", "plusrect", "teal", edit(lambda: include_pages_dialog(app, item)),
+             subtitle="De outro PDF ou do computador", rounded=True, dimmed=signed)
+        tile("Remover páginas", "minusrect", "red", edit(lambda: app.push(PagePickerScreen(app, item.id, "remove"))),
+             rounded=True, dimmed=signed)
         tile("Dividir em partes", "scissors", "pink", lambda: split_dialog(app, item))
-        tile("Corrigir páginas curvas", "curve", "teal", lambda: dewarp_dialog(app, item),
-             subtitle="Fotos de livros, papel ondulado", rounded=True)
+        tile("Corrigir páginas curvas", "curve", "teal", edit(lambda: dewarp_dialog(app, item)),
+             subtitle="Fotos de livros, papel ondulado", rounded=True, dimmed=signed)
         tile("Extrair páginas", "docplus", "indigo", lambda: app.push(PagePickerScreen(app, item.id, "extract")))
-        tile("Cortar e girar", "crop", "indigo", lambda: self._page_tool("crop", item),
-             subtitle="Margens e orientação", rounded=True)
-        tile("Numerar páginas", "numbers", "indigo", lambda: self._page_tool("number", item),
-             subtitle="Posição e formato")
+        tile("Cortar e girar", "crop", "indigo", edit(lambda: self._page_tool("crop", item)),
+             subtitle="Margens e orientação", rounded=True, dimmed=signed)
+        tile("Numerar páginas", "numbers", "indigo", edit(lambda: self._page_tool("number", item)),
+             subtitle="Posição e formato", dimmed=signed)
+        tile("Assinar digitalmente", "signature", "blue", lambda: self._sign(item),
+             subtitle=("Assinado · assinar de novo" if signed else "Certificado A1 ou A3"), rounded=True)
         tile("Renomear", "pencil", "gray", lambda: app.actions.rename(item))
         tile("Mover", "folder", "brown", lambda: app.actions.move([item]), subtitle=item.folder_name)
         tile("Favorito" if item.meta.favorite else "Favoritar", "star", "yellow",
              lambda: lib.set_favorite(item, not item.meta.favorite), rounded=True, selected=item.meta.favorite)
         tile("Duplicar", "duplicate", "gray", lambda: self._duplicate(item), rounded=True)
-        tile("Proteger com senha", "lock", "purple", lambda: protect_dialog(app, item),
-             subtitle="Criptografia padrão de PDF", rounded=True)
+        tile("Proteger com senha", "lock", "purple", edit(lambda: protect_dialog(app, item)),
+             subtitle="Criptografia padrão de PDF", rounded=True, dimmed=signed)
         self.content.addWidget(g)
         if lib.can_undo(item):
             u = WideTile("Desfazer última alteração", "undo", "gray",
@@ -999,6 +1042,14 @@ class DocumentScreen(Screen):
 
     def _ocr(self, item):
         self.app.actions.request_ocr(item)
+
+    def _sign(self, item):
+        import sign_ui
+        result = sign_ui.sign_dialog(self.app, self.app.lib.item(item.id) or item)
+        if result is not None and result.id != item.id:
+            self.app.open_document(result.id)
+        else:
+            self.refresh()
 
     def _page_tool(self, key, item):
         import page_tools
@@ -1719,6 +1770,8 @@ class PagePickerScreen(Screen):
     def _confirm(self):
         pages = sorted(self.selected)
         app, lib, item = self.app, self.app.lib, self.item
+        if self.mode == "remove" and blocked_signed(app, item):
+            return
         if self.mode == "remove":
             idx = alert(app, f"Remover {pages_text(len(pages))}?",
                         "Dá para voltar atrás com “Desfazer última alteração”, na tela do PDF.",
@@ -2245,6 +2298,9 @@ class SettingsScreen(Screen):
             "proteger um arquivo em si (por exemplo, antes de enviar), use “Proteger com senha” na tela do PDF, que "
             "usa a criptografia padrão de PDF (AES-256) e abre em qualquer leitor com a senha.", 13, 400, "secondary"))
         c.addWidget(card)
+
+        import sign_ui
+        sign_ui.settings_section(app, c, SectionTitle, small_button)
 
         c.addWidget(SectionTitle("Windows"))
         card = TileCard()

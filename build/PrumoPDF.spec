@@ -14,6 +14,9 @@ datas = [(os.path.join(ROOT, "tessdata"), "tessdata"),
 if os.path.isdir(os.path.join(ROOT, "tessdata_best")):
     datas.append((os.path.join(ROOT, "tessdata_best"), "tessdata_best"))
 datas += collect_data_files("fpdf")
+datas += collect_data_files("tzdata")          # fusos horários (o Windows não tem a base do Python)
+datas += collect_data_files("pyhanko")
+datas += collect_data_files("pyhanko_certvalidator")
 datas += collect_data_files("mammoth")         # estilos usados na conversão de .docx          # fontes e dados usados pelo OCRmyPDF ao montar o texto
 
 a = Analysis(
@@ -27,6 +30,10 @@ a = Analysis(
         "library", "pdfops", "services", "ocr_runner", "ios_theme", "ios_kit",
         "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert", "backup", "dewarp", "onnxruntime", "security",
         "mammoth", "pillow_heif", "img2pdf",
+        "annotations", "summary", "page_tools", "page_view", "rubberband", "reader_history", "reader_select",
+        "signing", "sign_ui", "pyhanko", "pyhanko.sign", "pyhanko.sign.signers", "pyhanko.stamp",
+        "pyhanko.pdf_utils.incremental_writer", "pyhanko.pdf_utils.font.basic", "pyhanko_certvalidator",
+        "tzlocal", "tzdata",
     ],
     hookspath=[],
     runtime_hooks=[],

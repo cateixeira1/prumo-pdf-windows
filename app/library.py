@@ -69,6 +69,7 @@ class DocMeta:
     has_undo: bool = False
     added: float | None = field(default_factory=time.time)
     locked: bool = False                       # PDF protegido por senha (precisa da senha para abrir)
+    signed: int = 0                            # quantas assinaturas digitais o PDF tem (0: nenhuma)
 
     @classmethod
     def from_dict(cls, d: dict) -> "DocMeta | None":
@@ -406,7 +407,12 @@ class Library:
             text = "\n".join(core.extract_text(path))
         except Exception:
             text = ""
-        return {"page_count": info.page_count, "status": status, "ocr_pages": need, "text": text}
+        try:
+            import signing
+            signed = signing.signature_count(path)
+        except Exception:  # noqa: BLE001
+            signed = 0
+        return {"page_count": info.page_count, "status": status, "ocr_pages": need, "text": text, "signed": signed}
 
     def apply_analysis(self, id: str, sig: str, result: dict) -> None:
         meta = self._metas.get(id)
@@ -420,6 +426,7 @@ class Library:
         self._texts[id] = folded
         meta.signature = sig
         meta.locked = bool(result.get("locked"))
+        meta.signed = int(result.get("signed") or 0)
         meta.page_count = result.get("page_count")
         meta.text_status = result.get("status")
         meta.ocr_pages = result.get("ocr_pages") or []
