@@ -96,13 +96,17 @@ class PageGrid(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.thumbs.ready.connect(lambda _k: self.update())
+        self.thumbs.ready.connect(self._thumb_ready)   # método: desliga sozinho quando a grade some
         T.changed.connect(self.update)
         self.timer = QTimer(self)
         self.timer.setInterval(16)
         self.timer.timeout.connect(self._auto_scroll)
 
+    def _thumb_ready(self, _key):
+        self.update()
+
     # --- geometria ---
+
     def columns(self, w=None) -> int:
         w = w or self.width()
         return max(1, (w + SPACING) // (self.cell_min + SPACING))

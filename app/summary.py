@@ -78,15 +78,22 @@ def build_pdf(dest, source_name: str, excerpts: list[dict], header: bool = True)
     """Grava os trechos num PDF A4 com texto selecionável. Devolve o número de páginas."""
     from convert import _latin1_safe, _new_pdf
 
+    from fpdf.enums import XPos, YPos
+
     pdf, family = _new_pdf(f"Resumo de {source_name}")
     safe = lambda t: _latin1_safe(t, family)   # noqa: E731
+
+    def write(height, text):
+        # cada bloco começa na margem esquerda (sem isso, o fpdf2 continua à direita do anterior)
+        pdf.multi_cell(0, height, safe(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
     if header:
         pdf.set_font(family, "B" if family == "Texto" else "", 16)
         pdf.set_text_color(40, 40, 40)
-        pdf.multi_cell(0, 8, safe(f"Resumo de “{source_name}”"))
+        write(8, f"Resumo de “{source_name}”")
         pdf.set_font(family, "", 9.5)
         pdf.set_text_color(120, 120, 120)
-        pdf.multi_cell(0, 5, safe("Trechos selecionados no Prumo PDF, na ordem em que foram adicionados."))
+        write(5, "Trechos selecionados no Prumo PDF, na ordem em que foram adicionados.")
         pdf.ln(4)
         y = pdf.get_y()
         pdf.set_draw_color(200, 200, 200)
@@ -100,7 +107,7 @@ def build_pdf(dest, source_name: str, excerpts: list[dict], header: bool = True)
         pdf.set_text_color(30, 30, 30)
         paras = [p.strip() for p in text.split("\n\n") if p.strip()]
         for k, para in enumerate(paras):
-            pdf.multi_cell(0, 6, safe(" ".join(para.split())))
+            write(6, " ".join(para.split()))
             if k < len(paras) - 1:
                 pdf.ln(2)
         if pdf.get_y() + 6 > pdf.h - pdf.b_margin:
@@ -108,7 +115,7 @@ def build_pdf(dest, source_name: str, excerpts: list[dict], header: bool = True)
         pdf.ln(1)
         pdf.set_font(family, "I" if family == "Texto" else "", 9)
         pdf.set_text_color(115, 115, 115)
-        pdf.multi_cell(0, 5, safe(pages_label(ex.get("pages", []))))
+        write(5, pages_label(ex.get("pages", [])))
         pdf.ln(7)
     pdf.output(str(dest))
     return pdf.page_no()
