@@ -38,14 +38,16 @@ jobs:
       - name: Testes num Windows de verdade
         id: test
         if: always() && steps.build.outcome == 'success'
+        timeout-minutes: 30
         shell: powershell
         run: |
           $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
           Start-Process -FilePath "build\redist\tesseract-setup.exe" -ArgumentList "/S" -Wait
           Copy-Item "tessdata\por.traineddata" "C:\Program Files\Tesseract-OCR\tessdata\" -Force
           $env:Path = "C:\Program Files\Tesseract-OCR;$env:Path"
-          & uv pip install --python .venv\Scripts\python.exe pytest | Out-Null
-          & .venv\Scripts\python.exe -m pytest -q tests *>&1 | Tee-Object -FilePath "$env:OUT\logs\tests.log"
+          & uv pip install --python .venv\Scripts\python.exe pytest pytest-timeout | Out-Null
+          # -v mostra cada teste ao começar; um teste parado por mais de 5 min mostra onde estava e encerra.
+          & .venv\Scripts\python.exe -m pytest -v -p no:cacheprovider --timeout=300 -o faulthandler_timeout=240 tests *>&1 | Tee-Object -FilePath "$env:OUT\logs\tests.log"
           exit $LASTEXITCODE
 
       - name: Capturas de tela (Windows, fonte Segoe UI)

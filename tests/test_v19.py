@@ -225,8 +225,20 @@ class CoreTests(unittest.TestCase):
 class ReaderFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        import app_window
+        import ios_kit
         import ios_theme
+        import organize
+        import screens
         ios_theme.T.setup("light")
+        # Um alerta de verdade espera um clique e travaria o teste: aqui ele só fica anotado.
+        cls.alerts = []
+        cls._orig_alerts = (ios_kit.alert, app_window.alert, screens.alert, organize.alert)
+
+        def fake_alert(win, title, message="", buttons=(), text=None, **kw):
+            cls.alerts.append(f"{title}: {message}")
+            return (0, "") if text is not None else 0
+        ios_kit.alert = app_window.alert = screens.alert = organize.alert = fake_alert
         cls.tmp = Path(tempfile.mkdtemp(prefix="prumo_v19_gui_"))
         from app_window import MainWindow
         from library import Library
@@ -241,9 +253,23 @@ class ReaderFlowTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        import app_window
+        import ios_kit
+        import organize
+        import screens
         cls.win.hub.shutdown()
         cls.win.close()
+        ios_kit.alert, app_window.alert, screens.alert, organize.alert = cls._orig_alerts
         shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def setUp(self):
+        self.alerts.clear()
+
+    def no_alerts(self, where=""):
+        """Falha mostrando a mensagem de erro que o app teria mostrado."""
+        msgs = list(self.alerts)
+        self.alerts.clear()
+        self.assertEqual(msgs, [], f"alerta inesperado {where}")
 
     def by(self, name):
         return next((i for i in self.win.lib.items if i.name == name), None)
@@ -269,12 +295,14 @@ class ReaderFlowTests(unittest.TestCase):
         self.assertTrue(r.view.has_selection())
         self.assertEqual(r.selection_text(), "INDENIZAÇÃO")
         r.highlight_selection("yellow")
+        self.no_alerts("ao destacar")
         marks = annotations.read_marks(w.lib.item(laudo.id).path)
         self.assertEqual(len(marks.get(1, [])), 1)
         self.assertEqual(len(r.view.marks.get(1, [])), 1, "o leitor vê o destaque novo")
         self.assertFalse(r.view.has_selection())
         self.assertTrue(w.lib.can_undo(w.lib.item(laudo.id)))
         r.undo_highlight()
+        self.no_alerts("ao desfazer o destaque")
         self.assertEqual(annotations.read_marks(w.lib.item(laudo.id).path), {})
         # marca-texto: com a cor escolhida, soltar o mouse já destaca
         r.set_tool("highlight", "blue")
@@ -283,16 +311,19 @@ class ReaderFlowTests(unittest.TestCase):
         r.view._pressing = True
         r.view.mouseReleaseEvent(QMouseEvent(QEvent.MouseButtonRelease, QPointF(5, 5), QPointF(5, 5), QPointF(5, 5),
                                              Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
+        self.no_alerts("com o marca-texto")
         marks = annotations.read_marks(w.lib.item(laudo.id).path)
         self.assertEqual(annotations.color_key(marks[2][0].color), "blue")
         r.set_tool("select")
         # resumo: dois trechos, de páginas diferentes
         r.view.select_range((0, 0), (1, 30))
         r.add_to_summary()
+        self.no_alerts("ao criar o resumo")
         res = self.by("Laudo - resumo")
         self.assertIsNotNone(res)
         r.view.select_range((3, 0), (3, 40))
         r.add_to_summary()
+        self.no_alerts("ao aumentar o resumo")
         res = self.by("Laudo - resumo")
         content = "\n".join(page_text(res.path, i) for i in range(res.page_count or 1))
         self.assertEqual(content.count("Resumo de"), 1, "o cabeçalho aparece uma vez")
@@ -300,6 +331,7 @@ class ReaderFlowTests(unittest.TestCase):
         self.assertIn("Trecho extraído da página 4", content)
         self.assertIsNotNone(r.summary_item())
         w.back()
+        self.no_alerts("ao sair do leitor")
 
     def test_rubber_band_selects_pdfs(self):
         import screens
@@ -317,6 +349,7 @@ class ReaderFlowTests(unittest.TestCase):
         self.assertTrue(scr.selecting)
         self.assertEqual(len(scr.selected), 3)
         w.back()
+        self.no_alerts()
 
     def test_organize_preview_and_band(self):
         w = self.win
@@ -340,6 +373,7 @@ class ReaderFlowTests(unittest.TestCase):
         self.assertEqual(org.grid.selected, {0, 1, 2})
         self.assertFalse(org.model.changed, "o retângulo só seleciona")
         w.back()
+        self.no_alerts()
 
 
 if __name__ == "__main__":
