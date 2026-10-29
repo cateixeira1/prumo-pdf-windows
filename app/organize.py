@@ -515,7 +515,8 @@ class OrganizeScreen(Screen):
         self.save_btn.clicked.connect(lambda _checked=False: self.save())
         self.nav.right.addWidget(self.save_btn)
         hint = Label(f"“{self.item.name}”. Arraste as páginas para mudar a ordem; perto do alto ou do pé da "
-                     "janela, a lista rola sozinha. Ctrl+clique seleciona várias, Shift+clique um trecho. "
+                     "janela, a lista rola sozinha. Ctrl+clique seleciona várias, Shift+clique um trecho, e arrastar "
+                     "a partir de um espaço vazio desenha um retângulo de seleção. "
                      "Ctrl+roda do mouse muda o tamanho. Para ler uma página, clique na lupa que aparece sobre ela "
                      "(ou dê dois cliques, ou tecle Espaço).",
                      13, 400, "secondary")
@@ -528,10 +529,28 @@ class OrganizeScreen(Screen):
         self.finish_content()
         self.content.setContentsMargins(MARGIN, 0, MARGIN, 100)
         self.bar = OrganizeBar(self)
+        # Retângulo de seleção: começa num espaço vazio (arrastar em cima de uma página a move).
+        from rubberband import RubberBand
+        self._band_base: set[int] = set()
+        self.band = RubberBand(self.body, self.scroll, self._band_items, self._band_select,
+                               lambda add: setattr(self, "_band_base", set(self.grid.selected) if add else set()),
+                               lambda w, pos: not (w is self.grid and self.grid.index_at(pos) is not None))
         for seq, fn in (("Delete", lambda: self.bar_action("delete")), ("Ctrl+A", self.select_all),
                         ("Ctrl+Z", lambda: self.bar_action("undo")), ("Ctrl+S", self.save),
                         ("Esc", self.clear_selection), ("Space", lambda: self.bar_action("view"))):
             QShortcut(QKeySequence(seq), self, fn, context=Qt.WidgetWithChildrenShortcut)
+        self._sync()
+
+    def _band_items(self):
+        off = self.grid.mapTo(self.body, QPoint(0, 0))
+        return [(i, self.grid.cell_rect(i).translated(off.x(), off.y())) for i in range(len(self.model.entries))]
+
+    def _band_select(self, keys: set, _additive: bool, _final: bool):
+        g = self.grid
+        g.selected = self._band_base | keys
+        if keys:
+            g.anchor = min(keys)
+        g.update()
         self._sync()
 
     def refresh(self):

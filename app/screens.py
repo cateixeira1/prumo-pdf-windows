@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, Qt, QUrl
+from PySide6.QtCore import QRectF, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIntValidator, QPainter, QPen, QTransform
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout,
                                QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
@@ -477,7 +477,8 @@ class SelectionBar(QWidget):
         self.hide()
 
     def update_state(self, n: int, any_ocr: bool):
-        self.label.setText("Clique nos PDFs" if n == 0 else f"{n} selecionado{'s' if n != 1 else ''}")
+        self.label.setText("Clique nos PDFs ou arraste sobre eles" if n == 0
+                           else f"{n} selecionado{'s' if n != 1 else ''}")
         enabled = {"share": n > 0, "move": n > 0, "merge": n >= 2, "ocr": any_ocr, "delete": n > 0}
         for k, b in self.buttons.items():
             glyph = {"share": "share", "move": "folder_line", "merge": "stack", "ocr": "textscan", "delete": "trash"}[k]
@@ -526,7 +527,42 @@ class DocumentGridScreen(Screen):
         self.search.debounced.connect(lambda _t: self.refresh())
         self.content.addWidget(self.search)
         self.bar = SelectionBar(self)
+        self._tiles = []
+        self._band_base: list[str] = []
+        from rubberband import RubberBand, rect_in
+        self.band = RubberBand(self.body, self.scroll,
+                               lambda: [(t.item.id, rect_in(self.body, t)) for t in self._tiles if t.isVisible()],
+                               self._band_select, self._band_start, self._band_can_start)
         self.finish_content()
+
+    # --- seleção com o retângulo (clicar e arrastar) ---
+    @staticmethod
+    def _band_can_start(widget, pos) -> bool:
+        # a estrela e os três pontos continuam sendo botões
+        return not (isinstance(widget, DocTile) and widget._target(pos))
+
+    def _band_start(self, additive: bool):
+        self._band_base = list(self.selected) if (self.selecting and additive) else []
+
+    def _band_select(self, keys: set, additive: bool, final: bool):
+        order = [t.item.id for t in self._tiles]
+        sel = self._band_base + [k for k in order if k in keys and k not in self._band_base]
+        if not final:
+            for t in self._tiles:
+                t.set_selection(t.item.id in sel)
+            return
+        if not sel and not self.selecting:
+            for t in self._tiles:
+                t.set_selection(None)
+            return
+        if self.selecting:
+            self.selected = sel
+            for t in self._tiles:
+                t.set_selection(t.item.id in sel)
+            self._update_bar()
+        else:
+            self.selected = sel
+            self.set_selecting(True, keep=True)
 
     def _title(self):
         if self.list_id:
@@ -575,9 +611,10 @@ class DocumentGridScreen(Screen):
         self.app.set_setting("sort", key)
         self.refresh()
 
-    def set_selecting(self, on: bool):
+    def set_selecting(self, on: bool, keep: bool = False):
         self.selecting = on
-        self.selected = []
+        if not keep:
+            self.selected = []
         self.more.setVisible(not on)
         self.ok.setVisible(on)
         self.refresh()
@@ -1438,6 +1475,8 @@ def unprotect_dialog(app, item):
 # --- Escolher páginas (remover, extrair) --------------------------------------
 
 class PageTile(QAbstractButton):
+    double_clicked = Signal()
+
     def __init__(self, thumbs, item, index):
         super().__init__()
         self.item, self.index = item, index
@@ -1445,6 +1484,13 @@ class PageTile(QAbstractButton):
         self.checked_ = False
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover)
+        self.setToolTip("Clique para marcar; dois cliques mostram a página grande")
+
+    def mouseDoubleClickEvent(self, e):
+        # o segundo clique desfaz a marcação do primeiro; a página abre grande
+        super().mouseDoubleClickEvent(e)
+        if e.button() == Qt.LeftButton:
+            self.double_clicked.emit()
 
     def hasHeightForWidth(self):
         return True
@@ -1501,7 +1547,8 @@ class PagePickerScreen(Screen):
 
         card = TileCard()
         card.lay.addWidget(Label(f"“{self.item.name}” · {pages_text(self.total)}", 14, 600))
-        card.lay.addWidget(Label("Clique nas páginas ou digite, por exemplo: 1, 3-5, 10-fim", 13, 400, "secondary"))
+        card.lay.addWidget(Label("Clique nas páginas, arraste o mouse sobre várias ou digite, por exemplo: 1, 3-5, 10-fim. "
+                                 "Dois cliques mostram a página grande.", 13, 400, "secondary"))
         self.field = QLineEdit()
         self.field.setPlaceholderText("Páginas")
         card.lay.addWidget(self.field)
@@ -1525,10 +1572,17 @@ class PagePickerScreen(Screen):
         for i in range(self.total):
             t = PageTile(app.hub.thumbs, self.item, i)
             t.clicked.connect(lambda _c=False, n=i + 1: self._toggle(n))
+            t.double_clicked.connect(lambda i=i: self.preview(i))
             self.tiles.append(t)
             self.grid.add(t)
         self.content.addWidget(self.grid)
         self.finish_content()
+        from rubberband import RubberBand, rect_in
+        self._band_base: set[int] = set()
+        self.band = RubberBand(self.body, self.scroll,
+                               lambda: [(t.index + 1, rect_in(self.body, t)) for t in self.tiles],
+                               self._band_select,
+                               lambda add: setattr(self, "_band_base", set(self.selected) if add else set()))
         self.action = PrimaryButton("", "red" if mode == "remove" else "indigo")
         self.action.setParent(self)
         self.action.clicked.connect(self._confirm)
@@ -1549,6 +1603,22 @@ class PagePickerScreen(Screen):
     def _toggle(self, n):
         self.selected.symmetric_difference_update({n})
         self._sync()
+
+    def _band_select(self, keys: set, _additive: bool, _final: bool):
+        self.selected = self._band_base | keys
+        self._sync()
+
+    def preview(self, i: int):
+        from page_view import PagePreviewOverlay
+        n = self.total
+        verb = "remover" if self.mode == "remove" else "extrair"
+
+        def label(k):
+            mark = f" · marcada para {verb}" if (k + 1) in self.selected else ""
+            return f"Página {k + 1} de {n}{mark}"
+        ov = PagePreviewOverlay(self.app, self.item.path, [(k, 0) for k in range(n)], i, label)
+        self._preview = ov
+        ov.open()
 
     def _all(self):
         self.selected = set(range(1, self.total + 1))
@@ -1867,6 +1937,22 @@ def choose_documents(app, title, multiple=False, excluding=frozenset(), allow_im
             if t.item.id == it.id:
                 t.set_selection(it.id in selected)
         update_ok()
+
+    if multiple:
+        from rubberband import RubberBand, rect_in
+        band_base: list[str] = []
+
+        def band_start(additive):
+            band_base[:] = list(selected) if additive else []
+
+        def band_select(keys, _additive, _final):
+            order = [t.item.id for t in tiles]
+            selected[:] = band_base + [k for k in order if k in keys and k not in band_base]
+            for t in tiles:
+                t.set_selection(t.item.id in selected)
+            update_ok()
+        ov._band = RubberBand(body, scroll, lambda: [(t.item.id, rect_in(body, t)) for t in tiles if t.isVisible()],
+                              band_select, band_start)
 
     search.debounced.connect(lambda _t: build())
     origin.currentIndexChanged.connect(lambda _i: build())
