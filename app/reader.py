@@ -744,8 +744,11 @@ class ThumbSidebar(QScrollArea):
             pass
 
     def _apply_style(self):
-        self.setStyleSheet(f"#thumbSidebar {{ background: {T.hex('tile')}; border: none; }}"
-                           "#thumbSidebar > QWidget > QWidget { background: transparent; }")
+        try:
+            self.setStyleSheet(f"#thumbSidebar {{ background: {T.hex('tile')}; border: none; }}"
+                               "#thumbSidebar > QWidget > QWidget { background: transparent; }")
+        except RuntimeError:      # já destruída
+            pass
 
     def image(self, page: int, px: int):
         item, pw = self.screen.item, self.screen.password
@@ -1115,6 +1118,20 @@ class _ReaderBase(Screen):
         self._apply_sides()
 
     def _apply_sides(self):
+        try:
+            self._apply_sides_now()
+        except RuntimeError:      # tela já destruída (ao fechar o app)
+            pass
+
+    def _visible_sidebar(self):
+        """A coluna de miniaturas, se ainda existe e está à mostra."""
+        try:
+            return self.sidebar if self.sidebar is not None and self.sidebar.isVisible() else None
+        except RuntimeError:      # já destruída: um sinal chegou depois de a tela fechar
+            self.sidebar = None
+            return None
+
+    def _apply_sides_now(self):
         if self.sidebar is None or self.panel is None:
             return
         w = self.width() or 1100
@@ -1965,14 +1982,18 @@ class ReaderScreen(_ReaderBase):
     def _update_counter(self):
         if getattr(self, "view", None) is None:
             return
-        n = len(self.view.sizes)
-        cur = self.view.current_page()
-        zoom = f" · {round(self.view.zoom * 100)}%" if abs(self.view.zoom - 1.0) > 1e-6 else ""
-        self.counter.set_text(f"Página {cur + 1} de {n}{zoom}")
-        self._place_counter(self.scroll)
-        if self.sidebar is not None and self.sidebar.isVisible():
-            self.sidebar.set_current(cur)
-        self.set_title(self._name + (f" · {self._extra}" if self._extra else ""))
+        try:
+            n = len(self.view.sizes)
+            cur = self.view.current_page()
+            zoom = f" · {round(self.view.zoom * 100)}%" if abs(self.view.zoom - 1.0) > 1e-6 else ""
+            self.counter.set_text(f"Página {cur + 1} de {n}{zoom}")
+            self._place_counter(self.scroll)
+            side = self._visible_sidebar()
+            if side is not None:
+                side.set_current(cur)
+            self.set_title(self._name + (f" · {self._extra}" if self._extra else ""))
+        except RuntimeError:      # tela já destruída
+            pass
 
     def closing(self):
         if getattr(self, "view", None) is not None:
@@ -2300,19 +2321,26 @@ class TextReaderScreen(_ReaderBase):
         self.browser.verticalScrollBar().setValue(int(y))
 
     def _scrolled_text(self, _v):
-        self.selbar.dismiss()
+        try:
+            self.selbar.dismiss()
+        except RuntimeError:      # tela já destruída (a barra de rolagem avisa ao ser apagada)
+            return
         self._update_counter()
 
     def _update_counter(self):
-        n = len(self.page_pos)
-        if not n:
-            self.counter.hide()
-            return
-        cur = self.current_page_index()
-        self.counter.set_text(f"Página {cur + 1} de {n}")
-        self._place_counter(self.browser)
-        if self.sidebar is not None and self.sidebar.isVisible():
-            self.sidebar.set_current(cur)
+        try:
+            n = len(self.page_pos)
+            if not n:
+                self.counter.hide()
+                return
+            cur = self.current_page_index()
+            self.counter.set_text(f"Página {cur + 1} de {n}")
+            self._place_counter(self.browser)
+            side = self._visible_sidebar()
+            if side is not None:
+                side.set_current(cur)
+        except RuntimeError:      # tela já destruída
+            pass
 
     # --- destaques e busca desenhados no texto ---
     def _marks_changed(self):
