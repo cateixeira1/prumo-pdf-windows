@@ -37,7 +37,7 @@ GAP = 14
 MAX_W = 900            # largura da página com zoom 100%, se a janela couber
 ZOOMS = [0.5, 0.67, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0]
 SIDEBAR_W = 168
-PANEL_W = 248
+PANEL_W = 268   # cabe "Adicionar ao resumo deste PDF" sem cortar
 EDGE = 50              # faixa perto da borda que rola a página enquanto se seleciona texto
 
 

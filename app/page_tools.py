@@ -216,7 +216,9 @@ def _scope_row(total: int, current: int):
     combo.addItem("Páginas ímpares (1, 3, 5…)", "odd")
     combo.addItem("Páginas pares (2, 4, 6…)", "even")
     combo.addItem("Escolher páginas…", "custom")
+    combo.setMinimumHeight(34)
     field = QLineEdit()
+    field.setMinimumHeight(32)
     field.setPlaceholderText(f"Ex.: 1, 3-5, 10-fim (de 1 a {total})")
     field.hide()
     combo.currentIndexChanged.connect(lambda _i: field.setVisible(combo.currentData() == "custom"))
@@ -288,6 +290,7 @@ def crop_dialog(app, item, start_page: int = 0) -> bool:
         sp.setDecimals(1)
         sp.setSingleStep(1)
         sp.setSuffix(" mm")
+        sp.setMinimumHeight(30)   # sem isso, em janela baixa, o campo fica achatado
         grid.addWidget(Label(label, 13, 500), k // 2 * 2, k % 2)
         grid.addWidget(sp, k // 2 * 2 + 1, k % 2)
         spins[key] = sp
@@ -314,13 +317,11 @@ def crop_dialog(app, item, start_page: int = 0) -> bool:
     combo, field = _scope_row(total, st["page"] + 1)
     card3.lay.addWidget(combo)
     card3.lay.addWidget(field)
-    err = Label("", 12, 500, "red")
-    card3.lay.addWidget(err)
     right.addWidget(card3)
     btn = PrimaryButton("Aplicar", "indigo")
     right.addWidget(btn)
-    right.addWidget(Label("O corte não apaga nada do PDF: “Página inteira” mostra tudo de novo. "
-                          "Também dá para usar “Desfazer última alteração”.", 12, 400, "secondary"))
+    right.addWidget(Label("O corte não apaga nada do PDF: “Página inteira” mostra tudo de novo.",
+                          12, 400, "secondary"))
     right.addStretch(1)
     body.addLayout(right, 2)
     ov.lay.addLayout(body)
@@ -453,12 +454,13 @@ class _NumberPreview(QWidget):
         for k in range(9):
             y = r.top() + 40 + k * 16
             p.drawLine(QPointF(r.left() + 22, y), QPointF(r.right() - 22 - (30 if k % 3 == 2 else 0), y))
-        f = font(max(6.0, self.size_pt * s * 1.25), 600)
+        # fora de escala: no tamanho real, o número seria um ponto quase invisível na prévia
+        f = font(max(11.0, self.size_pt * s * 2.5), 600)
         p.setFont(f)
         p.setPen(QColor(30, 30, 30))
         vert, horiz = self.position.split("_")
         m = self.margin_pt * s
-        box_h = 14
+        box_h = 20
         y = r.bottom() - m - box_h + 4 if vert == "bottom" else r.top() + m - 4
         align = {"left": Qt.AlignLeft, "center": Qt.AlignHCenter, "right": Qt.AlignRight}[horiz]
         p.drawText(QRectF(r.left() + m, y, r.width() - 2 * m, box_h), align | Qt.AlignVCenter, self.text)
