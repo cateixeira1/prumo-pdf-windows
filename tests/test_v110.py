@@ -48,6 +48,27 @@ def mouse(widget, typ, pos, button, buttons):
     return QMouseEvent(typ, pos, pos, glob, button, buttons, Qt.NoModifier)
 
 
+def acrobat_policy():
+    """
+    Regras do pyHanko para mudanças depois da assinatura, como no Adobe: depois de uma assinatura
+    de certificação com P=2, pode entrar uma nova assinatura visível. O padrão do pyHanko recusa isso
+    ("mais estrito que o Acrobat", diz a documentação dele); a norma (ISO 32000-1, 12.8.2.2) e o guia
+    do ITI permitem, com P=2, "inclusão de novas assinaturas".
+    """
+    from pyhanko.sign.diff_analysis import (CatalogModificationRule, DocInfoRule, DSSCompareRule,
+                                            FormUpdatingRule, GenericFieldModificationRule,
+                                            MetadataUpdateRule, ModificationLevel, ObjectStreamRule,
+                                            SigFieldCreationRule, SigFieldModificationRule,
+                                            StandardDiffPolicy, XrefStreamRule)
+    lta = ModificationLevel.LTA_UPDATES
+    return StandardDiffPolicy(
+        global_rules=[CatalogModificationRule(), DocInfoRule().as_qualified(lta),
+                      XrefStreamRule().as_qualified(lta), ObjectStreamRule().as_qualified(lta),
+                      DSSCompareRule().as_qualified(lta), MetadataUpdateRule().as_qualified(lta)],
+        form_rule=FormUpdatingRule(field_rules=[SigFieldCreationRule(allow_new_visible_after_certify=True),
+                                                SigFieldModificationRule(), GenericFieldModificationRule()]))
+
+
 def validate(path, root_der):
     """Confere as assinaturas com o pyHanko, tendo o certificado de teste como raiz confiável."""
     from asn1crypto import x509 as ax
@@ -60,7 +81,7 @@ def validate(path, root_der):
         r = PdfFileReader(f)
         for sig in r.embedded_signatures:
             vc = ValidationContext(trust_roots=[ax.Certificate.load(root_der)])
-            out.append(validate_pdf_signature(sig, vc))
+            out.append(validate_pdf_signature(sig, vc, diff_policy=acrobat_policy()))
     return out
 
 
@@ -173,11 +194,20 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(signed2.path.read_bytes().startswith(data), "atualização incremental")
         st1 = validate(signed2.path, info.der)
         st2 = validate(signed2.path, info2.der)
-        self.assertTrue(st1[0].intact and st1[0].valid and st1[0].docmdp_ok)
-        self.assertTrue(st2[1].intact and st2[1].valid)
+        self.assertTrue(st1[0].intact and st1[0].valid and st1[0].docmdp_ok, st1[0].pretty_print_details())
+        self.assertEqual(st1[0].modification_level.name, "FORM_FILLING", "depois da 1ª, só entrou a 2ª assinatura")
+        self.assertTrue(st2[1].intact and st2[1].valid and st2[1].docmdp_ok)
         self.assertIn(b"/FieldMDP", signed2.path.read_bytes())
         names = [d["name"] for d in signing.describe_signatures(signed2.path)]
         self.assertEqual(names, ["MARIA DE TESTE", "JOAO DA SILVA"])
+        # terceira assinatura: as duas de antes continuam valendo
+        info3 = signing.import_a1(self._cert("ANA SOUZA"), "senha123")
+        signed3 = signing.sign_item(lib, lib.item(signed.id), signing.file_signer(info3, "senha123"), info3.name,
+                                    signing.SignOptions(position="top_right"))
+        self.assertEqual(signing.signature_count(signed3.path), 3)
+        for i, der in enumerate((info.der, info2.der, info3.der)):
+            st = validate(signed3.path, der)[i]
+            self.assertTrue(st.intact and st.valid and st.docmdp_ok, f"assinatura {i + 1}: {st.pretty_print_details()}")
 
     def test_invisible_signature_and_rotated_page(self):
         import pikepdf
@@ -286,6 +316,17 @@ class ReaderTests(unittest.TestCase):
         r.selection_done()
         self.assertTrue(r.selbar.isVisible())
         self.assertTrue(r.selbar.unmark_btn.isHidden())
+        # a barra fica sobre as páginas (não sobre as miniaturas nem sobre o painel)
+        area = r.selection_bounds()
+        self.assertGreaterEqual(r.selbar.x(), area.left())
+        self.assertLessEqual(r.selbar.x() + r.selbar.width(), area.right() + 1)
+        # as setas de desfazer/refazer ficam logo depois da divisória das miniaturas
+        pump(200)
+        if r.sidebar is not None and r.sidebar.isVisible():
+            from PySide6.QtCore import QPoint
+            divider = r.sidebar.mapTo(r, QPoint(r.sidebar.width(), 0)).x()
+            undo_x = r.undo_btn.mapTo(r, QPoint(0, 0)).x()
+            self.assertTrue(divider <= undo_x <= divider + 30, f"divisória em {divider}, seta em {undo_x}")
         r.selbar._open_popup()
         self.assertTrue(r.selbar.popup.isVisible())
         self.assertEqual(len(r.selbar.popup.dots), 5)

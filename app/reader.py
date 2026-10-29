@@ -1025,6 +1025,7 @@ class _ReaderBase(Screen):
         self.thumbs_btn = CircleButton("sidebar", "Miniaturas das páginas")
         self.thumbs_btn.clicked.connect(lambda: self.toggle_side("reader_thumbs"))
         self.nav.left.addWidget(self.thumbs_btn)
+        self.nav.left.setSpacing(10)
         # desfazer e refazer: logo depois da divisória das miniaturas, sobre as páginas
         self._undo_gap = QWidget()
         self._undo_gap.setFixedWidth(0)
@@ -1075,6 +1076,10 @@ class _ReaderBase(Screen):
         """Retângulo do fim da seleção, em coordenadas desta tela (para a barra de seleção)."""
         return None
 
+    def selection_bounds(self):
+        """Área do texto (sem as miniaturas e o painel), em coordenadas desta tela: a barra fica dentro dela."""
+        return None
+
     def current_page_index(self) -> int:
         return 0
 
@@ -1122,16 +1127,18 @@ class _ReaderBase(Screen):
         QTimer.singleShot(0, self._place_undo)
 
     def _place_undo(self):
-        """Põe as setas de desfazer/refazer logo depois da coluna de miniaturas."""
+        """Põe as setas de desfazer/refazer logo depois da divisória das miniaturas."""
+        from PySide6.QtCore import QPoint
         try:
             if self.sidebar is None or not self.sidebar.isVisible():
                 self._undo_gap.setFixedWidth(0)
                 return
-            cur = self.undo_btn.geometry().x()
-            if cur <= 0:
+            # a posição do espaçador não depende da largura dele: a conta não acumula entre chamadas
+            gap_x = self._undo_gap.mapTo(self, QPoint(0, 0)).x()
+            side_right = self.sidebar.mapTo(self, QPoint(self.sidebar.width(), 0)).x()
+            if gap_x <= 0 or side_right <= 0:
                 return
-            target = SIDEBAR_W + 10
-            gap = max(0, self._undo_gap.width() + (target - cur))
+            gap = max(0, side_right + 12 - gap_x - self.nav.left.spacing())
             if gap != self._undo_gap.width():
                 self._undo_gap.setFixedWidth(gap)
         except RuntimeError:
@@ -1284,7 +1291,8 @@ class _ReaderBase(Screen):
         anchor = self.selection_anchor()
         if anchor is None:
             return
-        self.selbar.show_for(anchor, bool(self.marks_in_selection()), self.edit_block() is None)
+        self.selbar.show_for(anchor, bool(self.marks_in_selection()), self.edit_block() is None,
+                             self.selection_bounds())
 
     # --- destaques ---
     def _reload_marks(self):
@@ -1774,6 +1782,13 @@ class ReaderScreen(_ReaderBase):
         if self.view is not None:
             self.view.clear_selection()
 
+    def selection_bounds(self):
+        if self.view is None:
+            return None
+        from PySide6.QtCore import QPoint, QRect
+        tl = self.view.mapTo(self, QPoint(0, 0))
+        return QRect(tl.x(), tl.y(), self.view.width(), self.view.height())
+
     def selection_anchor(self):
         if self.view is None or not self.view.sel_rects:
             return None
@@ -2238,6 +2253,11 @@ class TextReaderScreen(_ReaderBase):
         if c.hasSelection():
             c.clearSelection()
             self.browser.setTextCursor(c)
+
+    def selection_bounds(self):
+        from PySide6.QtCore import QPoint, QRect
+        tl = self.browser.mapTo(self, QPoint(0, 0))
+        return QRect(tl.x(), tl.y(), self.browser.width(), self.browser.height())
 
     def selection_anchor(self):
         from PySide6.QtCore import QPoint, QRect

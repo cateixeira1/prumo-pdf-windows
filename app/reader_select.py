@@ -186,8 +186,8 @@ class SelectionToolbar(_Panel):
         self.screen.add_to_summary()
 
     # --- mostrar e esconder ---
-    def show_for(self, anchor: QRect, has_marks: bool, editable: bool):
-        """`anchor`: retângulo do fim da seleção, em coordenadas do leitor."""
+    def show_for(self, anchor: QRect, has_marks: bool, editable: bool, bounds: QRect | None = None):
+        """`anchor`: retângulo do fim da seleção, em coordenadas do leitor; `bounds`: área do texto."""
         self.mark_btn.setEnabled(editable)
         self.unmark_btn.setVisible(has_marks and editable)
         self._restyle()
@@ -195,7 +195,10 @@ class SelectionToolbar(_Panel):
         self.adjustSize()
         host = self.screen
         w, h = self.width(), self.height()
-        x = max(8, min(anchor.center().x() - w // 2, host.width() - w - 8))
+        lo, hi = 8, host.width() - w - 8
+        if bounds is not None and bounds.width() >= w + 16:
+            lo, hi = max(lo, bounds.left() + 8), min(hi, bounds.right() - w - 8)
+        x = max(lo, min(anchor.center().x() - w // 2, hi))
         top_limit = 70   # abaixo da barra do alto
         y = anchor.top() - h - 10
         if y < top_limit:

@@ -11,7 +11,7 @@ Certificados aceitos:
 
 Formato: PAdES (SubFilter ETSI.CAdES.detached), o mesmo que o Adobe Acrobat gera e que o Adobe
 Reader e outros leitores reconhecem. A primeira assinatura é de certificação (DocMDP, "só
-preenchimento de formulários e novas assinaturas"); as seguintes travam os campos (FieldMDP).
+preenchimento de formulários e novas assinaturas"); as seguintes travam o próprio campo (FieldMDP).
 O verificador do ITI (validar.iti.gov.br) exige DocMDP ou FieldMDP: sem eles, o resultado é
 "indeterminado".
 
@@ -442,9 +442,11 @@ def sign_file(src, dest, signer, name: str, options: SignOptions) -> None:
         count += 1
         field_name = f"Assinatura{count + 1}"
     page, box = _stamp_box(src, options.page, options.position, count) if options.stamp else (0, None)
+    # a primeira é de certificação (DocMDP P=2: só formulários e novas assinaturas); as seguintes travam
+    # o próprio campo (FieldMDP). Travar todos os campos (/All) faria uma terceira assinatura contar como
+    # mudança proibida na segunda.
     spec = SigFieldSpec(sig_field_name=field_name, on_page=page, box=box,
-                        field_mdp_spec=FieldMDPSpec(FieldMDPAction.ALL) if count else None,
-                        doc_mdp_update_value=MDPPerm.FILL_FORMS if count else None)
+                        field_mdp_spec=FieldMDPSpec(FieldMDPAction.INCLUDE, fields=[field_name]) if count else None)
     meta = signers.PdfSignatureMetadata(
         field_name=field_name, md_algorithm="sha256", subfilter=SigSeedSubFilter.PADES,
         certify=count == 0, docmdp_permissions=MDPPerm.FILL_FORMS,
