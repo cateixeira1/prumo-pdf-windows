@@ -107,6 +107,39 @@ class Actions:
     def ocr(self, item):
         self.app.start_ocr(item)
 
+    def request_ocr(self, item):
+        """OCR com os avisos da tela do PDF (já em andamento, já tem cópia, já tem texto)."""
+        lib = self.lib
+        copy = lib.ocr_copy(item)
+        if self.app.jobs.is_busy(item.id):
+            self.app.toast("O OCR deste PDF já está em andamento.")
+        elif item.meta.is_ocr_result:
+            self.app.toast("Este arquivo já é o resultado de um OCR.")
+        elif copy is not None:
+            self.app.toast(f"Já existe uma cópia com OCR: {copy.name}", "Abrir",
+                           lambda: self.app.open_document(copy.id))
+        elif item.meta.text_status == "digital":
+            self.app.toast("Todas as páginas já têm texto selecionável. O OCR não é necessário.")
+        else:
+            self.app.start_ocr(item)
+
+    def duplicate(self, item):
+        res = {}
+        if self.app.attempt(lambda: res.setdefault("c", self.lib.duplicate(item))) and res.get("c"):
+            self.app.toast(f"Cópia criada: {res['c'].name}", "Abrir", lambda: self.app.open_document(res["c"].id))
+
+    def undo(self, item) -> bool:
+        if not self.lib.can_undo(item):
+            self.app.toast("Não há alteração para desfazer neste PDF.")
+            return False
+        idx = alert(self.app, "Desfazer a última alteração?",
+                    "O PDF volta a ficar como estava antes da última mudança (páginas, destaques, cortes ou numeração).",
+                    [("Cancelar", "cancel"), ("Desfazer", "default")])
+        if idx == 1 and self.app.attempt(lambda: self.lib.undo(item)):
+            self.app.toast("Alteração desfeita.")
+            return True
+        return False
+
     def toggle_favorite(self, item):
         on = not item.meta.favorite
         self.lib.set_favorite(item, on)
@@ -324,7 +357,7 @@ class HomeScreen(Screen):
         self.tiles = {}
 
         self.grid = FlowGrid(max_cols=3)   # 6 cartões: 2 ou 3 colunas fecham as linhas
-        self.tools = FlowGrid(max_cols=4)  # 8 cartões: 2 ou 4 colunas
+        self.tools = FlowGrid(max_cols=5)  # 10 cartões: 2 ou 5 colunas
 
         def add(grid, key, title, icon, color, rounded=False, cb=None, subtitle=None):
             t = Tile(title, icon, color, subtitle=subtitle, rounded_icon=rounded)
@@ -351,6 +384,8 @@ class HomeScreen(Screen):
         add(t, "extract", "Extrair páginas", "docplus", "indigo", False, lambda: self._tool("extract"))
         add(t, "split", "Dividir em partes", "scissors", "pink", False, lambda: self._tool("split"))
         add(t, "merge", "Combinar PDFs", "stack", "purple", True, lambda: app.push(MergeScreen(app)))
+        add(t, "crop", "Cortar e girar", "crop", "indigo", True, lambda: self._tool("crop"))
+        add(t, "number", "Numerar páginas", "numbers", "indigo", False, lambda: self._tool("number"))
 
         self.folders = WideTile("Pastas", "folder", "indigo")
         self.folders.clicked.connect(lambda: app.push(FoldersScreen(app)))
@@ -382,7 +417,8 @@ class HomeScreen(Screen):
     TOOL_TITLES = {"read": "Ler qual PDF?", "ocr": "Fazer OCR de quais PDFs?",
                    "organize": "Organizar qual PDF?", "insert": "Incluir páginas em qual PDF?",
                    "remove": "Remover páginas de qual PDF?", "extract": "Extrair páginas de qual PDF?",
-                   "split": "Dividir qual PDF?"}
+                   "split": "Dividir qual PDF?", "crop": "Cortar ou girar páginas de qual PDF?",
+                   "number": "Numerar as páginas de qual PDF?"}
 
     def _tool(self, key):
         run_tool(self.app, key, self.TOOL_TITLES[key])
@@ -444,6 +480,12 @@ def run_tool(app, key, title):
         app.push(PagePickerScreen(app, item.id, "extract"))
     elif key == "split":
         split_dialog(app, item)
+    elif key == "crop":
+        import page_tools
+        page_tools.crop_dialog(app, item)
+    elif key == "number":
+        import page_tools
+        page_tools.number_dialog(app, item)
 
 
 # --- Listas e pastas ------------------------------------------------------------
@@ -909,6 +951,10 @@ class DocumentScreen(Screen):
         tile("Corrigir páginas curvas", "curve", "teal", lambda: dewarp_dialog(app, item),
              subtitle="Fotos de livros, papel ondulado", rounded=True)
         tile("Extrair páginas", "docplus", "indigo", lambda: app.push(PagePickerScreen(app, item.id, "extract")))
+        tile("Cortar e girar", "crop", "indigo", lambda: self._page_tool("crop", item),
+             subtitle="Margens e orientação", rounded=True)
+        tile("Numerar páginas", "numbers", "indigo", lambda: self._page_tool("number", item),
+             subtitle="Posição e formato")
         tile("Renomear", "pencil", "gray", lambda: app.actions.rename(item))
         tile("Mover", "folder", "brown", lambda: app.actions.move([item]), subtitle=item.folder_name)
         tile("Favorito" if item.meta.favorite else "Favoritar", "star", "yellow",
@@ -952,31 +998,17 @@ class DocumentScreen(Screen):
         return "Verificando…"
 
     def _ocr(self, item):
-        lib = self.app.lib
-        copy = lib.ocr_copy(item)
-        if self.app.jobs.is_busy(item.id):
-            self.app.toast("O OCR deste PDF já está em andamento.")
-        elif item.meta.is_ocr_result:
-            self.app.toast("Este arquivo já é o resultado de um OCR.")
-        elif copy is not None:
-            self.app.toast(f"Já existe uma cópia com OCR: {copy.name}", "Abrir",
-                           lambda: self.app.open_document(copy.id))
-        elif item.meta.text_status == "digital":
-            self.app.toast("Todas as páginas já têm texto selecionável. O OCR não é necessário.")
-        else:
-            self.app.start_ocr(item)
+        self.app.actions.request_ocr(item)
+
+    def _page_tool(self, key, item):
+        import page_tools
+        (page_tools.crop_dialog if key == "crop" else page_tools.number_dialog)(self.app, item)
 
     def _duplicate(self, item):
-        res = {}
-        if self.app.attempt(lambda: res.setdefault("c", self.app.lib.duplicate(item))) and res.get("c"):
-            self.app.toast(f"Cópia criada: {res['c'].name}", "Abrir", lambda: self.app.open_document(res["c"].id))
+        self.app.actions.duplicate(item)
 
     def _undo(self, item):
-        idx = alert(self.app, "Desfazer a última alteração?",
-                    "O PDF volta a ficar como estava antes da última mudança nas páginas.",
-                    [("Cancelar", "cancel"), ("Desfazer", "default")])
-        if idx == 1 and self.app.attempt(lambda: self.app.lib.undo(item)):
-            self.app.toast("Alteração desfeita.")
+        self.app.actions.undo(item)
 
 
 # --- Dividir ------------------------------------------------------------------------

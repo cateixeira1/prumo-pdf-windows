@@ -227,6 +227,14 @@ GLYPHS = {
     "convert": '<path d="M5 3.5h6l3 3v6"/><path d="M11 3.5v3h3"/><path d="M13 13.5h6.5M17 11l2.5 2.5L17 16"/>'
                '<rect x="5" y="15" width="8" height="5.5" rx="1"/><path d="M7 17.8h4"/>',
     "eye": '<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+    "sidebar": '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15M5.8 8h1.6M5.8 11h1.6M5.8 14h1.6"/>',
+    "sidebar_right": '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M14.5 4.5v15M16.8 8h1.6M16.8 11h1.6M16.8 14h1.6"/>',
+    "highlighter": '<path d="M14.8 4.2l5 5-7.6 7.6H7.2v-5z"/><path d="M10.6 8.4l5 5"/><path d="M4 20.5h10" stroke-width="2.6"/>',
+    "eraser": '<path d="M8.5 19.5l-4.2-4.2a1.8 1.8 0 0 1 0-2.5l8.7-8.7a1.8 1.8 0 0 1 2.5 0l3.9 3.9a1.8 1.8 0 0 1 0 2.5L11.5 19.5z"/><path d="M8.5 19.5h11M8.6 9.4l6 6"/>',
+    "cursor_text": '<path d="M8.5 4.5h2.2c.8 0 1.3.5 1.3 1.3v12.4c0 .8-.5 1.3-1.3 1.3H8.5M15.5 4.5h-2.2c-.8 0-1.3.5-1.3 1.3M15.5 19.5h-2.2c-.8 0-1.3-.5-1.3-1.3M9.5 12h5"/>',
+    "summary": '<path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4"/><path d="M9 11h6M9 14h6M9 17h3.5"/>',
+    "crop": '<path d="M7 3v14h14"/><path d="M3 7h14v14"/>',
+    "numbers": '<path d="M3.8 9.4l2-1.4v8.5"/><path d="M9.4 10a2.2 2.2 0 0 1 4.3 0c0 2.4-4.3 3.6-4.3 6.5h4.4"/><path d="M16.2 8h4l-2.4 3.2a2.4 2.4 0 1 1-1.8 4.3"/>',
     "computer": '<rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6M12 16.5V20"/>',
     "library": '<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/>'
                '<path d="M16.2 5.2l3.6-.9 3 15.2-3.6.9z" transform="translate(-2 0)"/>',

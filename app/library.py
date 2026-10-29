@@ -720,24 +720,30 @@ class Library:
         self._changed()
 
     # --- alterar o próprio arquivo (com "Desfazer") ---
-    def modify(self, item: PDFItem, change) -> None:
-        """`change(caminho)` altera o arquivo. Antes, guarda a versão atual para o Desfazer."""
+    def modify(self, item: PDFItem, change, keep_review: bool = False):
+        """
+        `change(caminho)` altera o arquivo. Antes, guarda a versão atual para o Desfazer.
+        Devolve o que `change` devolver. `keep_review`: a mudança não mexe no texto das páginas
+        (destaques, por exemplo), então o aviso de revisão do OCR continua valendo.
+        """
         backup = self.versions_dir / f"{item.id}.pdf"
         work = self.temp_path()
         shutil.copy2(item.path, work)
         try:
-            change(work)
+            result = change(work)
             shutil.copy2(item.path, backup)
-            os.replace(work, item.path)
+            _replace(work, item.path)
         finally:
             work.unlink(missing_ok=True)
         meta = self._metas.get(item.id)
         if meta:
             meta.has_undo = True
             meta.signature = None
-            meta.review_pages = None   # depois de mudar as páginas, o relatório do OCR deixa de valer
+            if not keep_review:
+                meta.review_pages = None   # depois de mudar as páginas, o relatório do OCR deixa de valer
         self.save_meta()
         self.reload()
+        return result
 
     def can_undo(self, item: PDFItem) -> bool:
         return item.meta.has_undo and (self.versions_dir / f"{item.id}.pdf").exists()
@@ -750,6 +756,19 @@ class Library:
         os.utime(item.path, None)
         self.update(item.id, has_undo=False, signature=None)
         self.reload()
+
+
+def _replace(src: Path, dest: Path, tries: int = 12) -> None:
+    """os.replace com novas tentativas: no Windows, o arquivo pode estar aberto por um instante
+    (miniatura sendo gerada, antivírus, sincronização da nuvem)."""
+    for k in range(tries):
+        try:
+            os.replace(src, dest)
+            return
+        except PermissionError:
+            if k == tries - 1:
+                raise
+            time.sleep(0.1)
 
 
 def _hide(path: Path) -> None:

@@ -613,6 +613,8 @@ class FlowGrid(QWidget):
         cols = max(2, min(self.max_cols, (width + SPACING) // (self.min_col + SPACING)))
         if self.max_cols == 4 and cols == 3:
             cols = 2   # a tela inicial fica com linhas completas
+        if self.max_cols == 5 and cols in (3, 4):
+            cols = 2   # ferramentas da tela inicial (10 cartões): 2 ou 5 colunas, linhas completas
         return cols
 
     def hasHeightForWidth(self):
