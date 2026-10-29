@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import unicodedata
 from pathlib import Path
 
 SUFFIX = " - resumo"
@@ -51,7 +52,8 @@ def file_signature(path) -> str:
 
 
 def _store_path(lib, rel: str) -> Path:
-    key = hashlib.sha1(rel.casefold().encode("utf-8")).hexdigest()[:20]
+    # NFC + minúsculas: o iPhone calcula o mesmo código para o mesmo caminho
+    key = hashlib.sha1(unicodedata.normalize("NFC", rel).lower().encode("utf-8")).hexdigest()[:20]
     return Path(lib.root, *STORE_DIR) / f"{key}.json"
 
 

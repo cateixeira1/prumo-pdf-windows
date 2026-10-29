@@ -1422,6 +1422,20 @@ def remove_app_password(app):
 
 # --- Senha no PDF ------------------------------------------------------------------------
 
+def password_strength(pw: str) -> tuple[str, str]:
+    """Força da senha (texto e cor), para orientar: letras maiúsculas e minúsculas, números e símbolos."""
+    if not pw:
+        return ("Dica: misture letras, números e símbolos (ex.: Caso2026!Ana).", "secondary")
+    kinds = sum(bool(f(pw)) for f in (lambda s: any(c.islower() for c in s), lambda s: any(c.isupper() for c in s),
+                                       lambda s: any(c.isdigit() for c in s), lambda s: any(not c.isalnum() for c in s)))
+    score = kinds + (len(pw) >= 8) + (len(pw) >= 12)
+    if len(pw) < 6 or score <= 2:
+        return ("Senha fraca: use 8 ou mais caracteres, com letras e números.", "red")
+    if score <= 4:
+        return ("Senha média. Fica mais forte com mais caracteres, números e símbolos.", "orange")
+    return ("Senha forte.", "green")
+
+
 def protect_dialog(app, item):
     """Cria uma cópia do PDF com senha (AES-256, o padrão de PDF), que abre em qualquer leitor com a senha."""
     ov = SheetOverlay(app, 460)
@@ -1430,12 +1444,18 @@ def protect_dialog(app, item):
     card.lay.setSpacing(8)
     card.lay.addWidget(Label(f"“{item.name}”", 15, 600))
     card.lay.addWidget(Label("A cópia protegida só abre com a senha, em qualquer leitor de PDF (Adobe, Edge, Chrome, "
-                             "iPhone). Usa a criptografia padrão de PDF (AES-256).", 13, 400, "secondary"))
+                             "iPhone). Usa a criptografia padrão de PDF (AES-256). A senha pode ter letras, números e "
+                             "símbolos; maiúsculas e minúsculas fazem diferença.", 13, 400, "secondary"))
     pw1, pw2 = QLineEdit(), QLineEdit()
-    for e, ph in ((pw1, "Senha"), (pw2, "Repita a senha")):
+    for e, ph in ((pw1, "Senha (letras, números e símbolos)"), (pw2, "Repita a senha")):
         e.setEchoMode(QLineEdit.Password)
         e.setPlaceholderText(ph)
         card.lay.addWidget(e)
+    show = QCheckBox("Mostrar a senha")
+    show.toggled.connect(lambda on: [e.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password) for e in (pw1, pw2)])
+    card.lay.addWidget(show)
+    strength = Label("", 13, 600, "secondary")
+    card.lay.addWidget(strength)
     info = Label("", 13, 500, "red")
     card.lay.addWidget(info)
     trash = QCheckBox("Mandar o original (sem senha) para a Lixeira")
@@ -1463,6 +1483,10 @@ def protect_dialog(app, item):
         elif b and a != b:
             msg = "As senhas não são iguais."
         info.setText(msg)
+        label, color = password_strength(a)
+        strength.role = color
+        strength._apply()
+        strength.setText(label)
         btn.setEnabled(bool(a) and a == b and len(a) >= 4)
     pw1.textChanged.connect(check)
     pw2.textChanged.connect(check)
