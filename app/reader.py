@@ -33,7 +33,7 @@ import reader_text
 from reader_history import ReaderHistory
 from reader_select import SelectionToolbar
 from ios_kit import (CircleButton, EmptyState, Label, Screen, SearchField, TextButton, menu_action, styled_menu)
-from ios_theme import MARGIN, T, font, glyph_icon, paint_glyph
+from ios_theme import MARGIN, T, connect_alive, font, glyph_icon, paint_glyph
 
 GAP = 14
 MAX_W = 900            # largura da página com zoom 100%, se a janela couber
@@ -725,17 +725,9 @@ class ThumbSidebar(QScrollArea):
         self.list.clicked.connect(self.page_clicked)
         self.setWidget(self.list)
         self._apply_style()
-        T.changed.connect(self._apply_style)
+        connect_alive(T.changed, self, lambda o, *_: o._apply_style())
         self._own = None
-        thumbs = screen.app.hub.thumbs
-        thumbs.ready.connect(self._ready)
-        self.destroyed.connect(lambda *_: self._disconnect(thumbs))
-
-    def _disconnect(self, thumbs):
-        try:
-            thumbs.ready.disconnect(self._ready)
-        except (RuntimeError, TypeError):
-            pass
+        connect_alive(screen.app.hub.thumbs.ready, self, lambda o, *_: o._ready())
 
     def _ready(self, *_):
         try:
@@ -855,7 +847,7 @@ class ToolPanel(QScrollArea):
         self.buttons: dict[str, _PanelButton] = {}
         self._build()
         self._apply_style()
-        T.changed.connect(self._apply_style)
+        connect_alive(T.changed, self, lambda o, *_: o._apply_style())
 
     def _apply_style(self):
         self.setStyleSheet(f"#toolPanel {{ background: {T.hex('tile')}; border: none; }}"

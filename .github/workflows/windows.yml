@@ -47,8 +47,14 @@ jobs:
           $env:Path = "C:\Program Files\Tesseract-OCR;$env:Path"
           & uv pip install --python .venv\Scripts\python.exe pytest pytest-timeout | Out-Null
           # -v mostra cada teste ao começar; um teste parado por mais de 5 min mostra onde estava e encerra.
+          # O resultado é o código de saída do pytest: com "Stop", qualquer linha na saída de erro (um aviso
+          # do Qt ao fechar, por exemplo) parava o passo antes do fim e escondia o resto da mensagem.
+          $ErrorActionPreference = "Continue"
           & .venv\Scripts\python.exe -m pytest -v -p no:cacheprovider --timeout=300 -o faulthandler_timeout=240 tests *>&1 | Tee-Object -FilePath "$env:OUT\logs\tests.log"
-          exit $LASTEXITCODE
+          $rc = $LASTEXITCODE
+          $noise = Select-String -Path "$env:OUT\logs\tests.log" -Pattern "already deleted|Traceback" | Select-Object -First 5
+          if ($noise) { Write-Output "::warning::Mensagens de erro na saída dos testes: $($noise -join ' | ')" }
+          exit $rc
 
       - name: Capturas de tela (Windows, fonte Segoe UI)
         id: shots

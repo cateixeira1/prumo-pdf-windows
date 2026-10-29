@@ -101,6 +101,32 @@ UI_FAMILIES = ["Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "Deja
 DISPLAY_FAMILIES = ["Segoe UI Variable Display", "Segoe UI", "Inter", "Noto Sans", "DejaVu Sans"]
 
 
+def connect_alive(signal, obj, fn) -> None:
+    """
+    Liga um sinal de vida longa (tema, miniaturas prontas) a `fn(obj, *args)` só enquanto `obj` existir.
+    Ligado direto a um método, o PySide pode chamar o método depois de o widget ter sido apagado
+    ("Internal C++ object ... already deleted"), por exemplo ao fechar o app.
+    """
+    import weakref
+
+    import shiboken6
+    ref = weakref.ref(obj)
+
+    def slot(*args):
+        o = ref()
+        if o is not None and shiboken6.isValid(o):
+            fn(o, *args)
+
+    def drop(*_):
+        try:
+            signal.disconnect(slot)
+        except (RuntimeError, TypeError):
+            pass
+
+    signal.connect(slot)
+    obj.destroyed.connect(drop)
+
+
 def font(px: float, weight: int = 400, display: bool = False) -> QFont:
     """Fonte em pixels, como os tamanhos em pontos do iOS (16 pt no iPhone = 16 px aqui)."""
     f = QFont()

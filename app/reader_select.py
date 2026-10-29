@@ -15,7 +15,7 @@ from PySide6.QtGui import QColor, QCursor, QPainter, QPen
 from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QPushButton, QWidget
 
 import annotations
-from ios_theme import T, font, glyph_icon
+from ios_theme import T, connect_alive, font, glyph_icon
 
 
 def _qcolor(key: str) -> QColor:
@@ -128,7 +128,7 @@ class SelectionToolbar(_Panel):
         self._hover.timeout.connect(self._maybe_close_popup)
         self.mark_btn.installEventFilter(self)
         self.popup.installEventFilter(self)
-        T.changed.connect(self._restyle)
+        connect_alive(T.changed, self, lambda o, *_: o._restyle())
         self.hide()
 
     def _restyle(self):
