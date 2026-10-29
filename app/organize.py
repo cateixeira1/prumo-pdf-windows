@@ -8,6 +8,8 @@ Mouse:
 - arrastar move a página (ou todas as selecionadas); perto do alto ou do pé da
   janela a lista rola sozinha, mais rápido quanto mais perto da borda
 - Ctrl+roda do mouse aumenta ou diminui as miniaturas
+- a lupa (que aparece ao passar o mouse), o duplo clique ou a tecla Espaço mostram a página grande
+- arrastar a partir de um espaço vazio desenha um retângulo que seleciona as páginas dentro dele
 Teclado: Delete exclui, Ctrl+A seleciona tudo, Ctrl+Z desfaz, Ctrl+S salva, Esc limpa a seleção.
 """
 
@@ -90,6 +92,7 @@ class PageGrid(QWidget):
         self.dragging = False
         self.drop_index: int | None = None
         self.cursor_pos = QPointF()
+        self.hover_index: int | None = None
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -228,6 +231,11 @@ class PageGrid(QWidget):
         p.restore()
         _ = (tw, th)
 
+    def view_rect(self, i: int) -> QRectF:
+        """Botão redondo com a lupa, no canto de cima à esquerda da página (aparece com o mouse em cima)."""
+        r = self.cell_rect(i)
+        return QRectF(r.x() + 10, r.y() + 10, 30, 30)
+
     def _paint_cell(self, p, r, i, page, rot, dim=False):
         sel = i in self.selected
         if sel:
@@ -256,7 +264,16 @@ class PageGrid(QWidget):
         if rot:
             p.setPen(T.color("secondary"))
             p.setFont(font(11, 600))
-            p.drawText(QRectF(r.x() + 10, r.y() + 8, 60, 18), Qt.AlignLeft | Qt.AlignVCenter, f"{rot}°")
+            p.drawText(QRectF(r.x() + 44 if i == self.hover_index else r.x() + 10, r.y() + 8, 60, 18),
+                       Qt.AlignLeft | Qt.AlignVCenter, f"{rot}°")
+        if i == self.hover_index and not self.dragging:
+            vr = self.view_rect(i)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0, 40))
+            p.drawEllipse(vr.translated(0, 1))
+            p.setBrush(T.color("panel"))
+            p.drawEllipse(vr)
+            paint_glyph(p, vr.adjusted(7, 7, -7, -7), "zoom_in", T.color("blue"), 2.2)
 
     def _paint_insertion(self, p, idx):
         line = getattr(self, "drop_line", None)
@@ -303,6 +320,10 @@ class PageGrid(QWidget):
             return
         pos = e.position()
         i = self.index_at(pos)
+        if i is not None and i == self.hover_index and self.view_rect(i).contains(pos):
+            self._press_pos = self._press_index = None
+            self.screen.preview(i)
+            return
         self._press_pos = e.position().toPoint()
         self._press_index = i
         mods = e.modifiers()
@@ -325,6 +346,14 @@ class PageGrid(QWidget):
         self.update()
 
     def mouseMoveEvent(self, e):
+        if not e.buttons():
+            i = self.index_at(e.position())
+            if i != self.hover_index:
+                self.hover_index = i
+                self.setToolTip("" if i is None else "Clique na lupa (ou dê dois cliques) para ver a página grande")
+                self.update()
+            on_view = i is not None and self.view_rect(i).contains(e.position())
+            self.setCursor(Qt.PointingHandCursor if on_view else Qt.ArrowCursor)
         if self._press_pos is None or self._press_index is None or not (e.buttons() & Qt.LeftButton):
             return
         if not self.dragging:
@@ -368,6 +397,11 @@ class PageGrid(QWidget):
                 self.update()
         self._press_pos = None
         self._press_index = None
+
+    def leaveEvent(self, e):
+        self.hover_index = None
+        self.update()
+        super().leaveEvent(e)
 
     def mouseDoubleClickEvent(self, e):
         i = self.index_at(e.position())
@@ -422,7 +456,8 @@ class OrganizeBar(QWidget):
         self.label = Label("", 14, 600, wrap=False)
         lay.addWidget(self.label, 1)
         self.buttons = {}
-        for key, glyph, tip in (("left", "rotate_left", "Girar para a esquerda"),
+        for key, glyph, tip in (("view", "eye", "Ver a página grande (Espaço)"),
+                                ("left", "rotate_left", "Girar para a esquerda"),
                                 ("right", "rotate_right", "Girar para a direita"),
                                 ("delete", "trash", "Excluir páginas (Delete)"),
                                 ("undo", "undo", "Desfazer (Ctrl+Z)")):
@@ -438,7 +473,8 @@ class OrganizeBar(QWidget):
     def update_state(self, n_sel: int, total: int, can_undo: bool):
         self.label.setText("Arraste para mudar a ordem" if n_sel == 0
                            else f"{n_sel} página{'s' if n_sel != 1 else ''} selecionada{'s' if n_sel != 1 else ''}")
-        enabled = {"left": n_sel > 0, "right": n_sel > 0, "delete": 0 < n_sel < total, "undo": can_undo}
+        enabled = {"view": total > 0, "left": n_sel > 0, "right": n_sel > 0, "delete": 0 < n_sel < total,
+                   "undo": can_undo}
         for k, (b, glyph) in self.buttons.items():
             color = T.color("red" if k == "delete" else "blue") if enabled[k] else T.color("placeholder")
             b.setIcon(glyph_icon(glyph, color, 23))
@@ -456,7 +492,7 @@ class OrganizeBar(QWidget):
         p.drawRoundedRect(QRectF(self.rect()).adjusted(0, 0, 0, -3), TILE_RADIUS, TILE_RADIUS)
 
     def place(self):
-        w = min(560, self.screen.width() - 2 * MARGIN)
+        w = min(600, self.screen.width() - 2 * MARGIN)
         self.setFixedSize(w, 64)
         self.move((self.screen.width() - w) // 2, self.screen.height() - 64 - 14)
 
@@ -480,7 +516,8 @@ class OrganizeScreen(Screen):
         self.nav.right.addWidget(self.save_btn)
         hint = Label(f"“{self.item.name}”. Arraste as páginas para mudar a ordem; perto do alto ou do pé da "
                      "janela, a lista rola sozinha. Ctrl+clique seleciona várias, Shift+clique um trecho. "
-                     "Ctrl+roda do mouse muda o tamanho. Clique duas vezes para ver a página.",
+                     "Ctrl+roda do mouse muda o tamanho. Para ler uma página, clique na lupa que aparece sobre ela "
+                     "(ou dê dois cliques, ou tecle Espaço).",
                      13, 400, "secondary")
         hint.setContentsMargins(4, 0, 4, 0)
         self.content.addWidget(hint)
@@ -493,7 +530,7 @@ class OrganizeScreen(Screen):
         self.bar = OrganizeBar(self)
         for seq, fn in (("Delete", lambda: self.bar_action("delete")), ("Ctrl+A", self.select_all),
                         ("Ctrl+Z", lambda: self.bar_action("undo")), ("Ctrl+S", self.save),
-                        ("Esc", self.clear_selection)):
+                        ("Esc", self.clear_selection), ("Space", lambda: self.bar_action("view"))):
             QShortcut(QKeySequence(seq), self, fn, context=Qt.WidgetWithChildrenShortcut)
         self._sync()
 
@@ -532,6 +569,11 @@ class OrganizeScreen(Screen):
     def bar_action(self, key):
         g = self.grid
         sel = sorted(g.selected)
+        if key == "view":
+            if self.model.entries:
+                start = g.anchor if g.anchor is not None and g.anchor in g.selected else (sel[0] if sel else 0)
+                self.preview(start)
+            return
         if key in ("left", "right") and sel:
             self.model.rotate(sel, -90 if key == "left" else 90)
         elif key == "delete" and sel:
@@ -550,9 +592,28 @@ class OrganizeScreen(Screen):
         self._sync()
 
     def preview(self, i):
-        page, rot = self.model.entries[i]
+        """A página grande, por cima desta tela, na ordem e com o giro ainda não salvos."""
+        from page_view import PagePreviewOverlay
         from reader import ReaderScreen
-        self.app.push(ReaderScreen(self.app, self.item_id, start_page=page - 1, title_extra=f"página {page}"))
+        entries = list(self.model.entries)
+        if not entries:
+            return
+        n = len(entries)
+
+        def label(k):
+            page, rot = entries[k]
+            extra = (f" · era a {page}" if page != k + 1 else "") + (f" · girada {rot}°" if rot else "")
+            return f"Página {k + 1} de {n}{extra}"
+
+        def open_reader(page_index):
+            self.app.push(ReaderScreen(self.app, self.item_id, start_page=page_index,
+                                       title_extra=f"página {page_index + 1}"))
+
+        ov = PagePreviewOverlay(self.app, self.item.path, [(p - 1, r) for p, r in entries], i, label,
+                                on_open_reader=None if self.model.changed else open_reader)
+        ov.closed.connect(lambda: self.grid.setFocus())
+        self._preview = ov
+        ov.open()
 
     def can_leave(self) -> bool:
         if not self.model.changed:

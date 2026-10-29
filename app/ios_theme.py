@@ -226,6 +226,7 @@ GLYPHS = {
              '<path d="M14.5 4.5h4.5v15h-4.5M14.5 4.5v15"/><path d="M11 12h2.5"/>',
     "convert": '<path d="M5 3.5h6l3 3v6"/><path d="M11 3.5v3h3"/><path d="M13 13.5h6.5M17 11l2.5 2.5L17 16"/>'
                '<rect x="5" y="15" width="8" height="5.5" rx="1"/><path d="M7 17.8h4"/>',
+    "eye": '<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
     "computer": '<rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6M12 16.5V20"/>',
     "library": '<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/>'
                '<path d="M16.2 5.2l3.6-.9 3 15.2-3.6.9z" transform="translate(-2 0)"/>',

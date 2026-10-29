@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
 
     def _forgot_lock(self):
         alert(self, "Esqueceu a senha do Prumo?",
-              "Por segurança, não há como ver a senha. Dá para desfazer a trava apagando a senha dos ajustes "
+              "Por segurança, não há como ver a senha. Dá para desfazer o bloqueio apagando a senha dos ajustes "
               "do Prumo: o passo a passo está no LEIA-ME (seção “Esqueci a senha do Prumo”). Os PDFs não são "
               "afetados: continuam na pasta da biblioteca, visíveis no Explorador de Arquivos.",
               [("OK", "default")])

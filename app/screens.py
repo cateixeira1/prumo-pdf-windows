@@ -1310,7 +1310,7 @@ def set_app_password(app, change=False):
         card.lay.addWidget(e)
     info = Label("", 13, 500, "red")
     card.lay.addWidget(info)
-    card.lay.addWidget(Label("Guarde a senha num lugar seguro. Se esquecer, dá para desfazer a trava pelos ajustes do "
+    card.lay.addWidget(Label("Guarde a senha num lugar seguro. Se esquecer, dá para desfazer o bloqueio pelos ajustes do "
                              "Windows (passo a passo no LEIA-ME); os PDFs não são afetados.", 13, 400, "secondary"))
     wrap = QVBoxLayout()
     wrap.setContentsMargins(16, 4, 16, 16)
@@ -1333,12 +1333,12 @@ def set_app_password(app, change=False):
     pw2.returnPressed.connect(lambda: btn.isEnabled() and ov.done(True))
     if ov.run():
         app.set_lock_password(pw1.text())
-        app.toast("Senha salva. O Prumo vai pedir a senha ao abrir (e Ctrl+L trava na hora).")
+        app.toast("Senha salva. O Prumo vai pedir a senha ao abrir (e Ctrl+L bloqueia na hora).")
         app.current().refresh()
 
 
 def remove_app_password(app):
-    idx, cur = alert(app, "Remover a senha do Prumo", "Digite a senha atual para remover a trava.",
+    idx, cur = alert(app, "Remover a senha do Prumo", "Digite a senha atual para remover o bloqueio.",
                      [("Cancelar", "cancel"), ("Remover", "destructive")], text="", placeholder="Senha atual",
                      secret=True)
     if idx != 1:
@@ -2080,7 +2080,7 @@ class SettingsScreen(Screen):
         on = app.lock_enabled
         card.lay.addLayout(status_row("lock" if on else "lock_open", "purple" if on else "secondary",
                                       "Senha para abrir o Prumo: ligada" if on else "Senha para abrir o Prumo: desligada",
-                                      "O Prumo pede a senha ao abrir e depois de um tempo sem uso (Ctrl+L trava na hora)."
+                                      "O Prumo pede a senha ao abrir e depois de um tempo sem uso (Ctrl+L bloqueia na hora)."
                                       if on else "Qualquer pessoa com acesso a este computador abre o Prumo."))
         row = QHBoxLayout()
         if on:
@@ -2099,7 +2099,7 @@ class SettingsScreen(Screen):
                                                          app._restart_idle()))
             card.lay.addWidget(idle)
         card.lay.addWidget(Label(
-            "A senha trava a tela do Prumo. Os PDFs continuam como arquivos comuns na pasta da biblioteca: para "
+            "A senha bloqueia a tela do Prumo. Os PDFs continuam como arquivos comuns na pasta da biblioteca: para "
             "proteger um arquivo em si (por exemplo, antes de enviar), use “Proteger com senha” na tela do PDF, que "
             "usa a criptografia padrão de PDF (AES-256) e abre em qualquer leitor com a senha.", 13, 400, "secondary"))
         c.addWidget(card)

@@ -1131,9 +1131,12 @@ class LockOverlay(QWidget):
         lay.setSpacing(12)
         from ios_theme import app_icon
         logo = QLabel()
-        logo.setPixmap(app_icon().pixmap(64, 64))
+        logo.setPixmap(app_icon().pixmap(72, 72))
         logo.setAlignment(Qt.AlignCenter)
-        title = QLabel("Prumo PDF está travado")
+        padlock = QLabel()
+        padlock.setPixmap(glyph_icon("lock", T.color("purple"), 30).pixmap(30, 30))
+        padlock.setAlignment(Qt.AlignCenter)
+        title = QLabel("Prumo PDF está bloqueado")
         title.setFont(font(18, 700))
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(f"color: {T.hex('text')}; background: transparent;")
@@ -1153,7 +1156,7 @@ class LockOverlay(QWidget):
         forgot.setFont(font(13, 500))
         forgot.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {T.color('blue').name()}; }}")
         forgot.clicked.connect(on_forgot)
-        for w in (logo, title, self.field, self.error, button, forgot):
+        for w in (logo, padlock, title, self.field, self.error, button, forgot):
             lay.addWidget(w)
         self.box = box
         self.credit = QLabel("Color Software", self)
@@ -1170,8 +1173,11 @@ class LockOverlay(QWidget):
         return False
 
     def _place(self):
+        """O conjunto fica abaixo do meio da janela (sem encostar no crédito do pé)."""
         self.box.adjustSize()
-        self.box.move((self.width() - self.box.width()) // 2, (self.height() - self.box.height()) // 2)
+        free = self.height() - self.box.height() - 60
+        top = max(16, int(free * 0.68)) if free > 0 else max(0, (self.height() - self.box.height()) // 2)
+        self.box.move((self.width() - self.box.width()) // 2, top)
         self.credit.setGeometry(0, self.height() - 44, self.width(), 24)
 
     def paintEvent(self, _):
