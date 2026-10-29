@@ -2,7 +2,7 @@
 ; Gerado pelo build.ps1. Instala o aplicativo e, se ainda não houver, o Tesseract (UB Mannheim).
 
 #define AppName "Prumo PDF"
-#define AppVersion "1.8.0"
+#define AppVersion "1.9.0"
 #define AppExe "PrumoPDF.exe"
 
 [Setup]

@@ -55,7 +55,7 @@ jobs:
         shell: powershell
         run: |
           $demo = Join-Path $env:RUNNER_TEMP "demo\Prumo PDF"
-          foreach ($s in @("home", "all", "detail", "folder")) {
+          foreach ($s in @("home", "all", "detail", "folder", "reader", "crop", "number", "lock")) {
             $argv = @("app\main.py", "--demo", "`"$demo`"", "--screen", $s, "--shot", "`"$env:OUT\screenshots\$s.png`"")
             $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList $argv -PassThru
             if (-not $p.WaitForExit(120000)) { $p.Kill(); "timeout: $s" }

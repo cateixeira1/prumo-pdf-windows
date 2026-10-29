@@ -161,3 +161,22 @@ def apply_screen(win, screen: str):
     elif screen == "rename":
         win.push(DocumentScreen(win, pet.id))
         QTimer.singleShot(300, lambda: win.actions.rename(pet))
+    elif screen == "reader":
+        from reader import ReaderScreen
+        r = ReaderScreen(win, pet.id)
+        win.push(r)
+
+        def select_some():
+            if r.text is not None and r.text.char_count(0) > 140:
+                r.view.select_range((0, 40), (0, 140))
+        QTimer.singleShot(500, select_some)
+    elif screen == "crop":
+        import page_tools
+        win.push(DocumentScreen(win, pet.id))
+        QTimer.singleShot(300, lambda: page_tools.crop_dialog(win, pet))
+    elif screen == "number":
+        import page_tools
+        win.push(DocumentScreen(win, pet.id))
+        QTimer.singleShot(300, lambda: page_tools.number_dialog(win, pet))
+    elif screen == "lock":
+        win.lock.show_lock()

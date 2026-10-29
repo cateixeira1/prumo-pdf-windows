@@ -5,13 +5,20 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **Tela inicial com tudo:** as listas (Todos os PDFs, Recentes, Aguardando OCR, Com OCR, Favoritos, Pastas) e todas as ferramentas (Ler, Fazer OCR, Organizar, Incluir, Remover e Extrair páginas, Dividir, Combinar). Cada ferramenta pergunta qual PDF usar: um arquivo do computador ou um que já está no Prumo, filtrando por aba ou pasta.
 - **Cartões de PDF** com a estrela de favorito (clique para preencher e mandar para Favoritos) e os três pontos ⋮ no canto inferior direito, que abrem as opções (o botão direito do mouse continua funcionando).
 - **Pastas:** ao criar uma, já dá para adicionar PDFs do computador ou de qualquer parte do Prumo (outra pasta, Todos os PDFs, Favoritos…), movendo ou copiando.
-- **Leitor próprio**, com zoom e troca entre o original e a cópia com OCR, sem precisar abrir outro programa.
+- **Leitor próprio**, com zoom e troca entre o original e a cópia com OCR, sem precisar abrir outro programa:
+  - **à esquerda, as miniaturas das páginas** (como no Word): rolam com o mouse e um clique leva à página;
+  - **seleção de texto com o mouse** (dois cliques selecionam a palavra; Ctrl+C copia);
+  - **à direita, o painel**: cores de destaque (amarelo, verde, azul, rosa e laranja), borracha e botões para todas as funções do app. Escolha a cor e arraste sobre o texto. O destaque fica gravado no próprio PDF, como anotação padrão, e aparece no Adobe, no Edge, no Chrome e no iPhone. Ctrl+Z desfaz o último; o botão direito sobre um destaque apaga ou muda a cor;
+  - **Adicionar ao resumo deste PDF**: o trecho selecionado vai para “Nome - resumo.pdf”, na mesma pasta, com “Trecho extraído da página 10” (ou “das páginas 10-11”) embaixo, em letra menor. Cada trecho novo entra no fim do mesmo resumo.
+- **Cortar e girar páginas:** a página aparece inteira com uma moldura que se arrasta pelas bordas (ou margens em milímetros, ou “Margens automáticas”); girar 90° ou 180°; vale para esta página, todas, pares, ímpares ou um trecho. O corte usa o recorte padrão do PDF: nada é apagado, e “Página inteira” desfaz.
+- **Numerar páginas:** seis posições, formatos “1”, “Página 1”, “Página 1 de 12”, “1/12” e “- 1 -”, número inicial, a partir de qual página e tamanho da letra. O número vira texto de verdade na página.
+- **Seleção com o mouse:** clicar e arrastar desenha um retângulo que seleciona vários PDFs (nas listas, nas pastas e ao escolher PDFs) ou várias páginas (Remover, Extrair e Organizar). Ctrl soma à seleção.
 - **Modo leitor:** só o texto (do OCR ou do próprio PDF), em parágrafos, numa coluna confortável; letra maior ou menor (A−/A+), fonte com ou sem serifa e fundo branco, sépia ou escuro; copiar trechos ou o texto todo. Páginas com baixa confiança no OCR aparecem marcadas.
 - **Busca dentro do PDF (Ctrl+F)**, nas páginas e no modo leitor: não precisa de acentos nem maiúsculas (“indenizacao” acha “Indenização”), destaca todas as ocorrências e anda entre elas com Enter / Shift+Enter ou F3.
-- **Organizar páginas:** arraste para mudar a ordem (a lista rola sozinha perto das bordas), gire, exclua, desfaça; Ctrl+roda do mouse muda o tamanho das miniaturas.
+- **Organizar páginas:** arraste para mudar a ordem (a lista rola sozinha perto das bordas), gire, exclua, desfaça; Ctrl+roda do mouse muda o tamanho das miniaturas. Para ler uma página, clique na lupa que aparece sobre ela (ou dois cliques, ou Espaço): ela abre grande ali mesmo, já com o giro, e as setas passam para as outras.
 - **Incluir páginas** de outro PDF (ou do próprio): todas ou trechos como 5-15, no início, no fim ou depois de uma página.
 - **Corrigir páginas curvas:** fotos de livros e revistas (página curvada perto da lombada), papel ondulado ou dobrado ficam com o texto reto, o que também melhora o OCR. Na tela do PDF, “Corrigir páginas curvas” mostra o antes e o depois e cria uma cópia “- corrigido” (só as páginas escolhidas mudam). Em Ajustes, dá para corrigir automaticamente as fotos ao converter. Usa o modelo UVDoc, que roda inteiramente no computador.
-- **Segurança:** em Ajustes, uma **senha para abrir o Prumo** (bloqueia ao abrir, depois de um tempo sem uso e com Ctrl+L). Na tela do PDF, **Proteger com senha** cria uma cópia com a criptografia padrão de PDF (AES-256), que abre em qualquer leitor com a senha; **Remover senha** cria uma cópia sem senha (sabendo a senha), para fazer OCR, organizar ou dividir. PDFs com senha aparecem com um cadeado e pedem a senha ao abrir no leitor.
+- **Segurança:** em Ajustes, uma **senha para abrir o Prumo** (bloqueia ao abrir, depois de um tempo sem uso e com Ctrl+L). Na tela do PDF, **Proteger com senha** cria uma cópia com a criptografia padrão de PDF (AES-256), que abre em qualquer leitor com a senha (letras, números e símbolos; a tela mostra a força da senha e tem “Mostrar a senha”); **Remover senha** cria uma cópia sem senha (sabendo a senha), para fazer OCR, organizar ou dividir. PDFs com senha aparecem com um cadeado e pedem a senha ao abrir no leitor.
 - **Converter em PDF:** fotos e imagens (JPG, PNG, HEIC do iPhone, TIFF de várias páginas, BMP, GIF, WebP), Word, Excel e PowerPoint (DOC, DOCX, RTF, ODT, XLS, XLSX, ODS, PPT, PPTX, ODP), texto (TXT, CSV) e HTML. Várias fotos podem virar um PDF só, uma por página A4, ou um PDF para cada; depois, o app pergunta se quer fazer o OCR. Os arquivos do Office são convertidos pelo próprio Office instalado (como o “Salvar como PDF”) ou, sem Office, pelo LibreOffice; sem nenhum dos dois, um .docx ainda é convertido de forma simplificada. Também dá para importar ou arrastar esses arquivos direto: eles viram PDF na hora.
 - **OCR em português:** só as páginas em imagem passam pelo OCR; páginas que já têm texto ficam como estão. O resultado é uma cópia com “- OCR” no nome, na mesma pasta. Páginas com baixa confiança são marcadas para revisão.
 - **Remover, extrair, dividir em partes iguais e combinar.** Na divisão, um PDF de 200 páginas em 4 partes vira “Nome - Parte 1” a “Parte 4”.
@@ -29,7 +36,7 @@ A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.7.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.9.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
@@ -81,6 +88,13 @@ app/            código do aplicativo (Python + PySide6)
   app_window.py   janela principal, navegação, avisos e fila de OCR
   screens.py      telas no estilo do iPhone
   ios_theme.py    cores, fontes e ícones; ios_kit.py: cartões, busca, alertas
+  reader.py       leitor: miniaturas, páginas, seleção de texto, destaques e painel de ferramentas
+  reader_text.py  texto das páginas (busca, modo leitor, posições para selecionar)
+  annotations.py  destaques gravados no PDF (anotações /Highlight)
+  summary.py      “Adicionar ao resumo” (Nome - resumo.pdf; trechos em .prumo/resumos)
+  page_tools.py   cortar, girar e numerar páginas (as contas ficam em pdfops.py)
+  page_view.py    página grande por cima da tela (Organizar, Remover, Extrair)
+  rubberband.py   retângulo de seleção com o mouse
   library.py      biblioteca (pastas reais + metadados em .prumo/library.json)
   pdfops.py       remover, extrair, incluir, reorganizar, dividir
   services.py     miniaturas, análise em segundo plano, fila de OCR
