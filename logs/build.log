@@ -1,0 +1,64 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261030043940
+Username: runnervmdaln5\runneradmin
+RunAs User: runnervmdaln5\runneradmin
+Configuration Name: 
+Machine: runnervmdaln5 (Microsoft Windows NT 10.0.26100.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE -command . 'D:\a\_temp\4c02b49e-8a28-40cb-8ca9-400016e1126f.ps1'
+Process ID: 2308
+PSVersion: 5.1.26100.33648
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.33648
+BuildVersion: 10.0.26100.33648
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+==> Verificando o uv (gerenciador de Python)
+Instalando o uv...
+
+uv 0.13.6 (329bf9448 2026-10-26 x86_64-pc-windows-msvc)
+
+==> Preparando o ambiente Python 3.12 (pode levar alguns minutos na primeira vez)
+
+
+
+==> Baixando os modelos de idioma do Tesseract
+  tessdata/por.traineddata
+  tessdata/eng.traineddata
+  tessdata/osd.traineddata
+  tessdata_best/por.traineddata
+  tessdata_best/eng.traineddata
+
+==> Empacotando o aplicativo
+
+
+==> Conferindo o pacote
+{
+  "ocrmypdf": "17.13.0",
+  "tessdata": "D:\\a\\prumo-pdf-windows\\prumo-pdf-windows\\dist\\PrumoPDF\\_internal\\tessdata",
+  "tessdata_best": "D:\\a\\prumo-pdf-windows\\prumo-pdf-windows\\dist\\PrumoPDF\\_internal\\tessdata_best",
+  "tesseract": null,
+  "heic": true,
+  "icon": "D:\\a\\prumo-pdf-windows\\prumo-pdf-windows\\dist\\PrumoPDF\\_internal\\assets\\PrumoPDF.ico",
+  "dewarp": true,
+  "version": "1.11.0",
+  "ok": true
+}
+
+==> Baixando o instalador oficial do Tesseract (UB Mannheim)
+  tesseract-ocr-w64-setup-5.4.0.20240606.exe
+
+==> Gerando o instalador
+
+
+PRONTO! Instalador gerado:
+  D:\a\prumo-pdf-windows\prumo-pdf-windows\dist\PrumoPDF_Setup_1.11.0.exe
+Dê dois cliques nele para instalar o Prumo PDF.
+**********************
+Windows PowerShell transcript end
+End time: 20261030044327
+**********************
