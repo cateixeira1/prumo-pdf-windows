@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "Prumo PDF"
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.11.0"
 
 # --- Critérios de classificação de página -----------------------------------
 # São heurísticas, não regras exatas. Ficam aqui para serem ajustadas com

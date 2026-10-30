@@ -209,6 +209,49 @@ class CoreTests(unittest.TestCase):
             st = validate(signed3.path, der)[i]
             self.assertTrue(st.intact and st.valid and st.docmdp_ok, f"assinatura {i + 1}: {st.pretty_print_details()}")
 
+    def test_docmdp_levels_and_automatic_level(self):
+        import signing
+        from pdfops import UserError
+        from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+        from pyhanko.sign import fields
+        info = signing.import_a1(self._cert(), "senha123")
+        info2 = signing.import_a1(self._cert("JOAO DA SILVA"), "senha123")
+        for level in (1, 2, 3):
+            src = digital_pdf(self.tmp / f"N{level}.pdf", 1)
+            out = self.tmp / f"N{level}-assinado.pdf"
+            signing.sign_file(src, out, signing.file_signer(info, "senha123"), info.name,
+                              signing.SignOptions(level=level))
+            self.assertEqual(signing.docmdp_level(out), level)
+            st = validate(out, info.der)[0]
+            self.assertTrue(st.intact and st.valid and st.docmdp_ok, f"nível {level}: {st.pretty_print_details()}")
+            self.assertEqual(signing.level_for(out, 1), (level, "signed"), "o nível da 1ª assinatura vale")
+            second = self.tmp / f"N{level}-duas.pdf"
+            if level == 1:
+                with self.assertRaises(UserError):
+                    signing.sign_file(out, second, signing.file_signer(info2, "senha123"), info2.name,
+                                      signing.SignOptions())
+            else:
+                signing.sign_file(out, second, signing.file_signer(info2, "senha123"), info2.name,
+                                  signing.SignOptions(position="bottom_right"))
+                sts = validate(second, info.der)
+                self.assertTrue(sts[0].intact and sts[0].valid and sts[0].docmdp_ok, sts[0].pretty_print_details())
+                self.assertEqual(signing.docmdp_level(second), level)
+        # padrão do usuário, e PDF com mais de um campo de assinatura: nível 2 automático
+        plain = digital_pdf(self.tmp / "Plano.pdf", 1)
+        self.assertEqual(signing.level_for(plain, 3), (3, "default"))
+        self.assertEqual(signing.level_for(plain, 9), (2, "default"), "valor inválido volta para o padrão")
+        multi = self.tmp / "Campos.pdf"
+        with open(plain, "rb") as f:
+            w = IncrementalPdfFileWriter(f)
+            fields.append_signature_field(w, fields.SigFieldSpec("Autor"))
+            fields.append_signature_field(w, fields.SigFieldSpec("Testemunha"))
+            with open(multi, "wb") as o:
+                w.write(o)
+        self.assertEqual(signing.signature_field_count(multi), 2)
+        self.assertEqual(signing.signature_count(multi), 0)
+        self.assertEqual(signing.level_for(multi, 1), (2, "fields"))
+        self.assertEqual(signing.level_for(multi, 3), (2, "fields"))
+
     def test_invisible_signature_and_rotated_page(self):
         import pikepdf
 
@@ -274,8 +317,9 @@ class ReaderTests(unittest.TestCase):
         cls.win.resize(1300, 860)
         cls.win.show()
         cls.win.import_paths([digital_pdf(cls.tmp / "src" / "Laudo.pdf", 3),
-                              digital_pdf(cls.tmp / "src" / "Contrato.pdf", 2)])
-        assert wait(lambda: len(cls.win.lib.items) == 2 and all(i.page_count for i in cls.win.lib.items), 60)
+                              digital_pdf(cls.tmp / "src" / "Contrato.pdf", 2),
+                              digital_pdf(cls.tmp / "src" / "Longo.pdf", 10)])
+        assert wait(lambda: len(cls.win.lib.items) == 3 and all(i.page_count for i in cls.win.lib.items), 60)
 
     @classmethod
     def tearDownClass(cls):
@@ -446,6 +490,34 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(len(t.page_pos), 2, "um título de página para cada página")
         w.back()
         self.no_alerts("ao sair")
+
+    def test_text_mode_back_to_original_keeps_the_page(self):
+        from reader import ReaderScreen, TextReaderScreen
+        w = self.win
+        w.home()
+        item = self.by("Longo")
+        r = ReaderScreen(w, item.id)
+        w.push(r)
+        pump(300)
+        r.go_to_page(6)
+        pump(300)
+        self.assertEqual(r.view.current_page(), 6)
+        r.switch_to("text", item.id)
+        t = w.current()
+        self.assertIsInstance(t, TextReaderScreen)
+        pump(500)
+        self.assertEqual(t.current_page_index(), 6, "o modo texto abre na mesma página")
+        t.go_to_page(8)
+        pump(300)
+        page = t.current_page_index()
+        self.assertEqual(page, 8)
+        t.switch_to("page", item.id)
+        r = w.current()
+        self.assertIsInstance(r, ReaderScreen)
+        pump(800)
+        self.assertEqual(r.view.current_page(), page, "voltar para o original não pode ir para a primeira página")
+        w.back()
+        self.no_alerts("ao voltar para o original")
 
     def test_signed_pdf_is_read_only(self):
         import signing

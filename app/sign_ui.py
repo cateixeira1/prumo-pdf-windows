@@ -63,7 +63,8 @@ def sign_dialog(app, item):
         from app_window import alert
         idx = alert(app, "Nenhum certificado digital",
                     "Para assinar, adicione o seu certificado A1 (arquivo .pfx ou .p12). Certificado A3 (token ou "
-                    "cartão): instale o programa do token e conecte-o; o certificado aparece aqui sozinho.",
+                    "cartão): o Prumo não guarda o A3. Instale o programa do token, conecte-o e tente de novo; "
+                    "o Prumo encontra o certificado no Windows e liga o token na hora de assinar.",
                     [("Agora não", "cancel"), ("Adicionar A1…", "default")])
         if idx != 1:
             return None
@@ -93,14 +94,51 @@ def sign_dialog(app, item):
     pw.setEchoMode(QLineEdit.Password)
     pw.setPlaceholderText("Senha do certificado A1")
     card.lay.addWidget(pw)
-    pin_note = Label("O programa do token (ou o Windows) pede o PIN na hora de assinar.", 12, 400, "secondary")
+    pin_note = Label("Certificado do Windows (A3 em token ou cartão, ou A1 instalado): o Prumo não guarda nada dele. "
+                     "Na hora de assinar, o Windows liga o token e o programa do token pede o PIN.", 12, 400, "secondary")
     card.lay.addWidget(pin_note)
     more = Label("", 12, 500, "red")
     card.lay.addWidget(more)
     add = QHBoxLayout()
     add.addWidget(_link_button("Adicionar outro certificado A1…", lambda: ov.done("add")))
+    add.addWidget(_link_button("Procurar de novo (token conectado agora)", lambda: ov.done("again")))
     add.addStretch(1)
     card.lay.addLayout(add)
+
+    level_card = TileCard()
+    level_card.lay.setSpacing(8)
+    level_card.lay.addWidget(Label("Proteção do documento", 13, 600))
+    level_combo = QComboBox()
+    for k, (title, _text) in signing.LEVELS.items():
+        level_combo.addItem(title, k)
+    level_text = Label("", 12, 400, "secondary")
+    level_note = Label("", 12, 500, "orange")
+    preferred = int(app.setting("sign_level", signing.DEFAULT_LEVEL) or signing.DEFAULT_LEVEL)
+    offered, why = signing.level_for(item.path, preferred)
+    fields = signing.signature_field_count(item.path)
+    if why == "signed":
+        level_combo.hide()
+        known = signing.LEVELS.get(offered)
+        level_note.setText(
+            "O nível de proteção foi definido pela primeira assinatura" +
+            (f" ({known[0].split(':')[0].lower()}) e não muda mais." if known else " e não muda mais."))
+    else:
+        level_combo.setCurrentIndex(max(0, level_combo.findData(offered)))
+        if why == "fields":
+            level_note.setText(f"Este PDF tem {fields} campos de assinatura: o Prumo escolheu o nível 2, para os "
+                               "outros signatários ainda poderem assinar. Você pode mudar para o nível 1 ou 3.")
+    level_card.lay.addWidget(level_combo)
+    level_card.lay.addWidget(level_text)
+    level_card.lay.addWidget(level_note)
+    level_note.setVisible(bool(level_note.text()))
+    if why == "signed":
+        level_text.hide()
+
+    def show_level():
+        level_text.setText(signing.LEVELS.get(level_combo.currentData(), ("", ""))[1])
+
+    level_combo.currentIndexChanged.connect(lambda _i: show_level())
+    show_level()
 
     card2 = TileCard()
     card2.lay.setSpacing(8)
@@ -130,6 +168,7 @@ def sign_dialog(app, item):
     wrap.setContentsMargins(16, 4, 16, 16)
     wrap.setSpacing(12)
     wrap.addWidget(card)
+    wrap.addWidget(level_card)
     wrap.addWidget(card2)
     btn = PrimaryButton("Assinar", "blue")
     wrap.addWidget(btn)
@@ -160,6 +199,8 @@ def sign_dialog(app, item):
         if add_a1_dialog(app) is not None:
             return sign_dialog(app, item)
         return None
+    if answer == "again":
+        return sign_dialog(app, item)
     if not answer:
         return None
     c = current()
@@ -168,8 +209,17 @@ def sign_dialog(app, item):
     app.set_setting("sign_stamp", stamp.isChecked())
     app.set_setting("sign_page", page.currentData())
     app.set_setting("sign_position", pos.currentData())
+    level = int(level_combo.currentData() or signing.DEFAULT_LEVEL) if why != "signed" else signing.DEFAULT_LEVEL
+    if why != "signed" and fields > 1 and level == 1:
+        from app_window import alert
+        idx = alert(app, "Nível 1 em PDF com vários campos de assinatura?",
+                    f"Este PDF tem {fields} campos de assinatura. No nível 1, depois da sua assinatura ninguém mais "
+                    "poderá assinar os outros campos sem invalidar a sua. Para os outros poderem assinar, use o nível 2.",
+                    [("Voltar", "cancel"), ("Assinar no nível 1", "destructive")])
+        if idx != 1:
+            return sign_dialog(app, item)
     options = signing.SignOptions(stamp=stamp.isChecked(), page=page.currentData(), position=pos.currentData(),
-                                  reason=reason.text().strip())
+                                  reason=reason.text().strip(), level=level)
     out = {}
 
     def run():
@@ -210,11 +260,74 @@ def settings_section(app, c, SectionTitle, small_button):
     card.lay.addLayout(row)
     card.lay.addWidget(Label(
         "A1: o arquivo do certificado fica guardado só nesta conta do Windows (fora da biblioteca e da nuvem). "
-        "A senha não é gravada: o Prumo pede a senha a cada assinatura. A3 (token ou cartão) e A1 instalado no "
-        "Windows: aparecem sozinhos na hora de assinar, desde que o programa do token esteja instalado e o token "
-        "conectado. Depois de assinado, um PDF não pode mais ser alterado sem invalidar a assinatura.",
+        "A senha não é gravada: o Prumo pede a senha a cada assinatura.",
         13, 400, "secondary"))
     c.addWidget(card)
+
+    c.addWidget(SectionTitle("Certificado A3 (token ou cartão)"))
+    card = TileCard()
+    card.lay.addWidget(Label("Ligação direta com o token, pelo Windows", 15, 600))
+    card.lay.addWidget(Label(
+        "Não há nada para carregar ou importar: o Prumo não guarda o A3 (a chave privada nunca sai do token). "
+        "Instale o programa do seu token ou cartão e conecte-o. Na hora de assinar, o Prumo procura os "
+        "certificados em “Certificados – Usuário Atual > Pessoal” do Windows, que é onde o programa do token os "
+        "coloca, e o Windows faz a assinatura com o token. Quem pede o PIN é o programa do token, numa janela "
+        "do Windows. A1 instalado no Windows aparece no mesmo lugar.", 13, 400, "secondary"))
+    row = QHBoxLayout()
+    row.addWidget(small_button("Procurar certificados no Windows", lambda: _scan_windows(app)))
+    row.addStretch(1)
+    card.lay.addLayout(row)
+    c.addWidget(card)
+
+    c.addWidget(SectionTitle("Proteção do PDF assinado"))
+    card = TileCard()
+    card.lay.addWidget(Label("Nível padrão ao assinar", 15, 600))
+    combo = QComboBox()
+    for k, (title, _text) in signing.LEVELS.items():
+        combo.addItem(title, k)
+    combo.setCurrentIndex(max(0, combo.findData(int(app.setting("sign_level", signing.DEFAULT_LEVEL) or 2))))
+    text = Label("", 13, 400, "secondary")
+
+    def changed():
+        app.set_setting("sign_level", combo.currentData())
+        text.setText(signing.LEVELS[combo.currentData()][1])
+
+    combo.currentIndexChanged.connect(lambda _i: changed())
+    text.setText(signing.LEVELS[combo.currentData()][1])
+    card.lay.addWidget(combo)
+    card.lay.addWidget(text)
+    card.lay.addWidget(Label(
+        "O nível vale para a primeira assinatura do PDF (assinatura de certificação, DocMDP) e depois não muda. "
+        "Na hora de assinar, dá para trocar o nível daquele PDF. PDF com mais de um campo de assinatura usa o "
+        "nível 2 automaticamente, e o Prumo confirma com você antes de assinar. Nenhum nível impede que outro "
+        "programa grave uma alteração no arquivo: o que muda é que a assinatura deixa de valer (ou é marcada "
+        "como alterada), e leitores como o Adobe Acrobat avisam. Por isso o Prumo assina uma cópia "
+        "(“Nome - assinado”), mantém o original editável e desliga as ferramentas de edição na cópia.",
+        13, 400, "secondary"))
+    c.addWidget(card)
+
+
+def _scan_windows(app):
+    """Procura certificados com chave privada no Windows (A3 em token e A1 instalado) e mostra o resultado."""
+    from app_window import alert
+    out = {}
+    if not app.attempt(lambda: out.setdefault("c", signing.windows_certificates()), busy="Procurando no Windows…"):
+        return
+    found = out.get("c") or []
+    if found:
+        lines = "\n".join(f"• {c.name} · {c.issuer.split('CN=')[-1].split(',')[0]} · válido até "
+                          f"{c.not_after.astimezone().strftime('%d/%m/%Y')}" + (" · VENCIDO" if c.expired else "")
+                          for c in found)
+        alert(app, "Certificados encontrados no Windows",
+              lines + "\n\nEles aparecem na tela de assinar. Se o certificado do token for um deles, o Prumo "
+                      "fala com o token na hora da assinatura e o programa do token pede o PIN.",
+              [("OK", "default")])
+    else:
+        alert(app, "Nenhum certificado encontrado",
+              "Não achei certificado com chave privada em “Certificados – Usuário Atual > Pessoal”. Instale o "
+              "programa do token ou do cartão, conecte-o e procure de novo. Se o programa do token só deixa o "
+              "certificado acessível dentro dele, o Prumo não consegue usá-lo.",
+              [("OK", "default")])
 
 
 def _link_button(text, fn):

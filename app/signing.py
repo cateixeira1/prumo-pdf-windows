@@ -43,6 +43,20 @@ POSITIONS = {
     "top_right": "Em cima, à direita",
 }
 PAGES = {"last": "Última página", "first": "Primeira página"}
+# Nível de proteção da assinatura de certificação (DocMDP, "P" na norma ISO 32000): o que ainda pode entrar
+# no PDF depois da primeira assinatura sem que ela deixe de valer.
+LEVELS = {
+    1: ("Nível 1: nenhuma mudança",
+        "Depois de assinado, nada pode ser mudado e ninguém mais pode assinar: qualquer mudança invalida a "
+        "assinatura. Serve para documento com um só signatário."),
+    2: ("Nível 2: novas assinaturas e preenchimento de campos",
+        "Outras pessoas ainda podem assinar e preencher campos de formulário sem invalidar a sua assinatura. "
+        "Texto, páginas e anotações continuam travados. É o padrão do Prumo e o mais usado em contratos."),
+    3: ("Nível 3: assinaturas, campos e comentários",
+        "Além do nível 2, permite comentários e anotações (como destaques) feitos por outros leitores, sem "
+        "invalidar a assinatura. O texto e as páginas continuam travados."),
+}
+DEFAULT_LEVEL = 2
 STAMP_W, STAMP_H = 230, 48
 
 
@@ -362,8 +376,31 @@ def signature_count(path) -> int:
         return 0
 
 
+def signature_field_count(path) -> int:
+    """Quantos campos de assinatura o PDF tem, assinados ou vazios."""
+    import pikepdf
+    try:
+        with pikepdf.open(str(path)) as pdf:
+            return sum(1 for f in _fields(pdf) if f.get("/FT") == "/Sig")
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def level_for(path, preferred: int = DEFAULT_LEVEL) -> tuple[int, str]:
+    """
+    (nível a oferecer, motivo): PDF já assinado → o da primeira assinatura (não muda mais); PDF com mais
+    de um campo de assinatura → 2, para os outros ainda poderem assinar; senão, o padrão do usuário.
+    """
+    existing = docmdp_level(path)
+    if signature_count(path) > 0:
+        return (existing or 0), "signed"
+    if signature_field_count(path) > 1:
+        return 2, "fields"
+    return (preferred if preferred in LEVELS else DEFAULT_LEVEL), "default"
+
+
 def docmdp_level(path) -> int | None:
-    """Permissão da assinatura de certificação (1: nenhuma mudança; 2: formulários e assinaturas)."""
+    """Permissão da assinatura de certificação (1: nenhuma mudança; 2: formulários e assinaturas; 3: também anotações)."""
     import pikepdf
     try:
         with pikepdf.open(str(path)) as pdf:
@@ -411,6 +448,7 @@ class SignOptions:
     position: str = "bottom_left"
     reason: str = ""
     location: str = ""
+    level: int = DEFAULT_LEVEL      # DocMDP da primeira assinatura (1, 2 ou 3)
 
 
 def sign_file(src, dest, signer, name: str, options: SignOptions) -> None:
@@ -442,14 +480,16 @@ def sign_file(src, dest, signer, name: str, options: SignOptions) -> None:
         count += 1
         field_name = f"Assinatura{count + 1}"
     page, box = _stamp_box(src, options.page, options.position, count) if options.stamp else (0, None)
-    # a primeira é de certificação (DocMDP P=2: só formulários e novas assinaturas); as seguintes travam
+    # a primeira é de certificação (DocMDP P=1, 2 ou 3, à escolha); as seguintes travam
     # o próprio campo (FieldMDP). Travar todos os campos (/All) faria uma terceira assinatura contar como
     # mudança proibida na segunda.
     spec = SigFieldSpec(sig_field_name=field_name, on_page=page, box=box,
                         field_mdp_spec=FieldMDPSpec(FieldMDPAction.INCLUDE, fields=[field_name]) if count else None)
     meta = signers.PdfSignatureMetadata(
         field_name=field_name, md_algorithm="sha256", subfilter=SigSeedSubFilter.PADES,
-        certify=count == 0, docmdp_permissions=MDPPerm.FILL_FORMS,
+        certify=count == 0,
+        docmdp_permissions={1: MDPPerm.NO_CHANGES, 2: MDPPerm.FILL_FORMS, 3: MDPPerm.ANNOTATE}.get(
+            options.level, MDPPerm.FILL_FORMS),
         reason=options.reason or None, location=options.location or None, name=name or None)
     style = None
     if options.stamp:

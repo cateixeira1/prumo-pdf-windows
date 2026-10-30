@@ -1961,9 +1961,24 @@ class ReaderScreen(_ReaderBase):
         if self.view is not None:
             self.view.relayout()
             if self._start:
-                QTimer.singleShot(0, lambda: self.view.go_to(self._start))
+                self._goto_start(self._start)
                 self._start = 0
             self.view.setFocus()
+
+    def _goto_start(self, n: int, tries: int = 16):
+        """Abre na página `n`. Logo ao abrir, a área de rolagem ainda não tem a altura final (ela só se ajusta
+        no próximo ciclo de eventos), e a rolagem ficava presa no topo: volta a tentar até chegar na página."""
+        v = getattr(self, "view", None)
+        if v is None:
+            return
+        try:
+            v.relayout()
+            v.go_to(n)
+            n = max(0, min(len(v.sizes) - 1, n))
+            if tries > 0 and v.current_page() != n:
+                QTimer.singleShot(40, lambda: self._goto_start(n, tries - 1))
+        except RuntimeError:
+            return  # a tela já foi fechada
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
