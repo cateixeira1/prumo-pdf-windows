@@ -23,14 +23,13 @@ LANGUAGES: list[tuple[str, str]] = [
     ("zh-CN", "中文 (简体)"),
     ("zh-TW", "中文 (繁體, 台灣)"),
     ("nb", "Norsk bokmål"),
-    ("se", "Davvisámegiella"),
     ("sv", "Svenska"),
     ("da", "Dansk"),
     ("fi", "Suomi"),
 ]
 CODES = [c for c, _ in LANGUAGES]
 # Idiomas cuja tradução ainda pede revisão por quem fala a língua.
-NEEDS_REVIEW = {"se"}
+NEEDS_REVIEW: set[str] = set()
 
 def _locales_dir() -> Path:
     import sys
@@ -86,8 +85,6 @@ def system_language() -> str:
         return "zh-TW" if name.upper().endswith(("TW", "HK", "MO")) or "Hant" in name else "zh-CN"
     if lang in ("no", "nn"):
         return "nb"
-    if lang in ("sme", "smi"):
-        return "se"
     return lang if lang in CODES else "en"
 
 

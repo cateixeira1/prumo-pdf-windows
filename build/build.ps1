@@ -74,23 +74,6 @@ Get-Model "tessdata" "osd.traineddata" "tessdata"
 foreach ($l in @("deu", "spa", "fra", "jpn", "chi_sim", "chi_tra", "nor", "swe", "dan", "fin")) {
     Get-Model "tessdata" "$l.traineddata" "tessdata"
 }
-# Sami do norte: modelo da Biblioteca Nacional da Noruega (Språkbanken), CC BY 4.0. Opcional: se o download
-# falhar, o idioma simplesmente não aparece no programa.
-function Get-SamiModel($destDir) {
-    $dest = Join-Path $destDir "sme.traineddata"
-    if ((Test-Path $dest) -and ((Get-Item $dest).Length -gt 100000)) { return }
-    foreach ($u in @($env:PRUMO_SAMI_URL, "https://www.nb.no/sbfil/verktoy/sb_smi_nor_pred.traineddata")) {
-        if (-not $u) { continue }
-        try {
-            Write-Host "  sami: $u"
-            Invoke-WebRequest -Uri $u -OutFile $dest -UseBasicParsing
-            if ((Get-Item $dest).Length -gt 100000) { return }
-        } catch { }
-        Remove-Item -Force $dest -ErrorAction SilentlyContinue
-    }
-    Write-Host "  Aviso: modelo sami não baixado; o OCR em sami não será incluído." -ForegroundColor Yellow
-}
-Get-SamiModel "tessdata"
 # Modelo de precisão máxima (tessdata_best): mais lento.
 Get-Model "tessdata_best" "por.traineddata" "tessdata_best"
 Get-Model "tessdata_best" "eng.traineddata" "tessdata_best"

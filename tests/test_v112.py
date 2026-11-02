@@ -165,6 +165,7 @@ class I18nTests(unittest.TestCase):
         en = json.loads((ROOT / "app" / "locales" / "en.json").read_text(encoding="utf-8"))
         self.assertEqual(en["Sem OCR"], "No OCR")
         self.assertGreater(len(en), 300)
+        self.assertFalse((ROOT / "app" / "locales" / "se.json").exists())
 
     def test_translate_exact_pattern_and_fallback(self):
         import i18n
@@ -202,7 +203,7 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(ocr_langs.parse("xxx"), ["por"])
         self.assertEqual(ocr_langs.join(["deu", "fra", "deu", "spa", "jpn", "fin"]), "deu+fra+spa+jpn")
         codes = {c for c, _ in ocr_langs.LANGS}
-        self.assertTrue({"deu", "fra", "spa", "eng", "jpn", "chi_sim", "chi_tra", "nor", "swe", "dan", "fin", "sme"} <= codes)
+        self.assertTrue({"deu", "fra", "spa", "eng", "jpn", "chi_sim", "chi_tra", "nor", "swe", "dan", "fin"} <= codes)
 
 
 class UiTests(unittest.TestCase):

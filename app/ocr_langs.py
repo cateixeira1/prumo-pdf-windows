@@ -20,14 +20,13 @@ LANGS: list[tuple[str, str]] = [
     ("swe", "Svenska"),
     ("dan", "Dansk"),
     ("fin", "Suomi"),
-    ("sme", "Davvisámegiella (nordsamisk)"),
 ]
 NAMES = dict(LANGS)
 MAX_LANGS = 4          # o Tesseract fica lento e impreciso com muitos idiomas juntos
 
 
 def installed(max_precision: bool = False) -> list[str]:
-    """Códigos cujo modelo acompanha o aplicativo (o modelo sami é opcional)."""
+    """Códigos cujo modelo acompanha o aplicativo ."""
     d = core.tessdata_dir(False)
     if d is None:
         return ["por"]
