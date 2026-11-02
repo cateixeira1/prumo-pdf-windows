@@ -65,7 +65,7 @@ def _friendly_error(exc: BaseException) -> str:
     if isinstance(exc, ex.InputFileError):
         return f"O arquivo não pôde ser lido: {exc}"
     if "language" in str(exc).lower() or "traineddata" in str(exc).lower():
-        return "O modelo de idioma português não foi encontrado na pasta do programa."
+        return "O modelo de idioma escolhido não foi encontrado na pasta do programa."
     return f"{name}: {exc}"
 
 
@@ -106,7 +106,8 @@ def run_job(job: dict, emit) -> int:
     out = Path(job["output"])
     t0 = time.time()
 
-    td = tessdata_dir(bool(job.get("max_precision")))
+    import ocr_langs
+    td, job["language"] = ocr_langs.resolve(job.get("language"), bool(job.get("max_precision")))
     if td is not None:
         os.environ["TESSDATA_PREFIX"] = str(td)
 

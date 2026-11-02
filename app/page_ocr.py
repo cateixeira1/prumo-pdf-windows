@@ -191,9 +191,13 @@ class OcrPage(QWidget):
 
         lay.addWidget(section_label("Idioma do documento"))
         self.lang = QComboBox()
-        self.lang.addItem("Português", "por")
-        self.lang.addItem("Português + Inglês", "por+eng")
-        self.lang.setCurrentIndex(int(s.value("ocr_lang_idx", 0)))
+        import ocr_langs
+        for code in ocr_langs.installed():
+            self.lang.addItem(ocr_langs.NAMES[code], code)
+        if "por" in ocr_langs.installed() and "eng" in ocr_langs.installed():
+            self.lang.insertItem(1, "Português + English", "por+eng")
+        saved = s.value("ocr_lang_code", "por")
+        self.lang.setCurrentIndex(max(0, self.lang.findData(saved)))
         lay.addWidget(self.lang)
 
         lay.addSpacing(6)
@@ -291,7 +295,7 @@ class OcrPage(QWidget):
 
     def _save_options(self):
         s = settings()
-        s.setValue("ocr_lang_idx", self.lang.currentIndex())
+        s.setValue("ocr_lang_code", self.lang.currentData())
         s.setValue("ocr_max", "true" if self.prec_max.isChecked() else "false")
         s.setValue("ocr_deskew", "true" if self.chk_deskew.isChecked() else "false")
         s.setValue("ocr_txt", "true" if self.chk_txt.isChecked() else "false")

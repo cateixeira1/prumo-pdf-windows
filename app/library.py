@@ -140,7 +140,7 @@ class FolderItem:
 LISTS = {
     "all": "Todos os PDFs",
     "recent": "Recentes",
-    "pending": "Aguardando OCR",
+    "pending": "Sem OCR",
     "ocr": "Com OCR",
     "favorites": "Favoritos",
 }

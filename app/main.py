@@ -311,6 +311,9 @@ def run_gui(files: list[str]) -> int:
     clean_stale_temp()
     settings = QSettings("Prumo", "PrumoPDF")
     T.setup(str(settings.value("appearance", "system")))
+    import i18n
+    i18n.set_language(str(settings.value("ui_language", "auto")))
+    i18n.install_hooks()
     w = MainWindow(settings)
     w.show()
     w._instance_server = start_instance_server(w)
@@ -341,6 +344,9 @@ def run_demo(args: list[str]) -> int:
     ini.unlink(missing_ok=True)
     settings = QSettings(str(ini), QSettings.IniFormat)
     T.setup("dark" if "--dark" in args else "light")
+    import i18n
+    i18n.set_language(arg("--lang", "pt"))
+    i18n.install_hooks()
     from library import Library
 
     w = MainWindow(settings, Library(root, local_dir=root.parent / (root.name + "_local")))

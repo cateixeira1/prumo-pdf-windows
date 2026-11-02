@@ -2,7 +2,7 @@
 
 Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arquivos para a internet, sem coletar dados e sem custo por uso. A partir da versão 1.1.0, a aparência e a organização são as mesmas do Prumo PDF para iPhone.
 
-- **Tela inicial com tudo:** as listas (Todos os PDFs, Recentes, Aguardando OCR, Com OCR, Favoritos, Pastas) e todas as ferramentas (Ler, Fazer OCR, Organizar, Incluir, Remover e Extrair páginas, Dividir, Combinar). Cada ferramenta pergunta qual PDF usar: um arquivo do computador ou um que já está no Prumo, filtrando por aba ou pasta.
+- **Tela inicial com tudo:** as listas (Todos os PDFs, Recentes, Sem OCR, Com OCR, Favoritos, Pastas) e todas as ferramentas (Ler, Fazer OCR, Organizar, Incluir, Remover e Extrair páginas, Dividir, Combinar). Cada ferramenta pergunta qual PDF usar: um arquivo do computador ou um que já está no Prumo, filtrando por aba ou pasta.
 - **Cartões de PDF** com a estrela de favorito (clique para preencher e mandar para Favoritos) e os três pontos ⋮ no canto inferior direito, que abrem as opções (o botão direito do mouse continua funcionando).
 - **Pastas:** ao criar uma, já dá para adicionar PDFs do computador ou de qualquer parte do Prumo (outra pasta, Todos os PDFs, Favoritos…), movendo ou copiando.
 - **Leitor próprio**, com zoom e troca entre o original e a cópia com OCR, sem precisar abrir outro programa:
@@ -22,6 +22,8 @@ Aplicativo para Windows que roda inteiramente no seu computador, sem enviar arqu
 - **Corrigir páginas curvas:** fotos de livros e revistas (página curvada perto da lombada), papel ondulado ou dobrado ficam com o texto reto, o que também melhora o OCR. Na tela do PDF, “Corrigir páginas curvas” mostra o antes e o depois e cria uma cópia “- corrigido” (só as páginas escolhidas mudam). Em Ajustes, dá para corrigir automaticamente as fotos ao converter. Usa o modelo UVDoc, que roda inteiramente no computador.
 - **Segurança:** em Ajustes, uma **senha para abrir o Prumo** (bloqueia ao abrir, depois de um tempo sem uso e com Ctrl+L). Na tela do PDF, **Proteger com senha** cria uma cópia com a criptografia padrão de PDF (AES-256), que abre em qualquer leitor com a senha (letras, números e símbolos; a tela mostra a força da senha e tem “Mostrar a senha”); **Remover senha** cria uma cópia sem senha (sabendo a senha), para fazer OCR, organizar ou dividir. PDFs com senha aparecem com um cadeado e pedem a senha ao abrir no leitor.
 - **Converter em PDF:** fotos e imagens (JPG, PNG, HEIC do iPhone, TIFF de várias páginas, BMP, GIF, WebP), Word, Excel e PowerPoint (DOC, DOCX, RTF, ODT, XLS, XLSX, ODS, PPT, PPTX, ODP), texto (TXT, CSV) e HTML. Várias fotos podem virar um PDF só, uma por página A4, ou um PDF para cada; depois, o app pergunta se quer fazer o OCR. Os arquivos do Office são convertidos pelo próprio Office instalado (como o “Salvar como PDF”) ou, sem Office, pelo LibreOffice; sem nenhum dos dois, um .docx ainda é convertido de forma simplificada. Também dá para importar ou arrastar esses arquivos direto: eles viram PDF na hora.
+- **Idiomas:** a interface está em português, inglês, espanhol, francês, alemão, japonês, chinês (simplificado e tradicional de Taiwan), norueguês, sami do norte, sueco, dinamarquês e finlandês. Em Ajustes > Idioma do aplicativo, o padrão é seguir o idioma do Windows; a mudança vale na próxima abertura. O inglês está completo; os demais idiomas têm os textos principais traduzidos e o que falta aparece em inglês. **O sami e as traduções em geral pedem revisão por quem fala a língua** (os catálogos estão em `app/locales/*.json`; `tools/build_locales.py` os gera).
+- **OCR em vários idiomas:** em Ajustes > OCR, marque até 4 idiomas por documento (português, inglês, espanhol, francês, alemão, japonês, chinês simplificado e tradicional, norueguês, sueco, dinamarquês, finlandês e, quando o modelo estiver incluído, sami do norte). Na precisão máxima, idiomas sem modelo “best” usam o modelo padrão.
 - **OCR em português:** só as páginas em imagem passam pelo OCR; páginas que já têm texto ficam como estão. O resultado é uma cópia com “- OCR” no nome, na mesma pasta. Páginas com baixa confiança são marcadas para revisão.
 - **Remover, extrair, dividir em partes iguais e combinar.** Na divisão, um PDF de 200 páginas em 4 partes vira “Nome - Parte 1” a “Parte 4”.
 - **Desfazer** a última alteração de páginas de cada PDF.
@@ -39,7 +41,7 @@ A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.11.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.12.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
@@ -119,6 +121,8 @@ Rodar sem instalar (com o ambiente `.venv` já criado pelo build): `.venv\Script
 Os critérios de classificação de página (quantidade mínima de texto, cobertura por imagem) ficam no início de `app/core.py`.
 
 ## 4. Componentes e licenças (todos gratuitos)
+
+- **Modelo de OCR para sami do norte** (opcional, baixado na montagem do instalador quando disponível): Språkbanken, Biblioteca Nacional da Noruega, licença CC BY 4.0. Citação: Enstad et al., “Comparative analysis of OCR methods for Sámi texts from the National Library of Norway”, NoDaLiDa 2025. O endereço de download usado em `build/build.ps1` não foi confirmado; se falhar, o sami fica de fora do OCR sem impedir a montagem.
 
 | Componente | Uso | Licença |
 |---|---|---|

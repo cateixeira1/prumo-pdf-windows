@@ -21,7 +21,7 @@ def render_page(path: str, index: int, width: int) -> QImage | None:
     import pypdfium2 as pdfium
 
     with core.PDFIUM_LOCK:
-        pdf = pdfium.PdfDocument(path)
+        pdf = core.open_for_render(path)
         try:
             page = pdf[index]
             w, _h = page.get_size()
@@ -46,7 +46,7 @@ class ThumbThread(QThread):
 
         try:
             with core.PDFIUM_LOCK:
-                pdf = pdfium.PdfDocument(self.path)
+                pdf = core.open_for_render(self.path)
         except Exception:
             return
         try:

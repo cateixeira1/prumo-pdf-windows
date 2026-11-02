@@ -502,7 +502,8 @@ class Label(QLabel):
 
 class SectionTitle(Label):
     def __init__(self, text):
-        super().__init__(text.upper(), 13, 600, "secondary", wrap=False)
+        from i18n import tr
+        super().__init__(tr(text).upper(), 13, 600, "secondary", wrap=False)
         self.setContentsMargins(4, 6, 4, 0)
 
 
@@ -1218,21 +1219,76 @@ class LockOverlay(QWidget):
 
 
 class SheetOverlay(_Overlay):
-    """Painel maior (tela modal), para escolher pasta, dividir etc."""
+    """
+    Painel maior (tela modal), para escolher pasta, dividir etc.
+
+    Com `sheet_header(..., scroll=True)` o conteúdo fica numa área com rolagem: quando o painel não cabe na
+    janela, o texto não é espremido (os rótulos com quebra de linha perdiam altura e se sobrepunham). O botão
+    principal pode ficar fixo embaixo, fora da rolagem, com `pin_footer`.
+    """
 
     def __init__(self, window: QWidget, width=420, max_height=None):
         super().__init__(window.window(), width)
         self.max_height = max_height
+        self.panel_lay = self.lay          # cabeçalho, rolagem e rodapé; `lay` passa a ser o corpo rolável
+        self._scroll: QScrollArea | None = None
+        self._footer_box: QWidget | None = None
+
+    def enable_scroll(self):
+        """Daqui em diante, o que for posto em `self.lay` entra numa área com rolagem."""
+        if self._scroll is not None:
+            return
+        body = QWidget()
+        body.setStyleSheet("background: transparent;")
+        body_lay = QVBoxLayout(body)
+        body_lay.setContentsMargins(0, 0, 0, 0)
+        body_lay.setSpacing(0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } "
+                             "QScrollArea > QWidget > QWidget { background: transparent; }")
+        scroll.setWidget(body)
+        self.panel_lay.addWidget(scroll, 1)
+        self._scroll = scroll
+        self.lay = body_lay
+
+    def pin_footer(self, widget: QWidget):
+        """Deixa `widget` (em geral o botão principal) fixo no pé do painel, visível mesmo com rolagem."""
+        if self._scroll is None:
+            self.lay.addWidget(widget)
+            return
+        if self._footer_box is None:
+            box = QWidget()
+            box.setStyleSheet("background: transparent;")
+            lay = QVBoxLayout(box)
+            lay.setContentsMargins(16, 6, 16, 16)
+            lay.setSpacing(0)
+            self.panel_lay.addWidget(box)
+            self._footer_box = box
+        self._footer_box.layout().addWidget(widget)
 
     def _place(self):
-        self.panel.adjustSize()
-        h = self.panel.sizeHint().height()
         limit = int(self.height() * 0.86) if self.max_height is None else min(self.max_height, int(self.height() * 0.86))
+        if self._scroll is None:
+            self.panel.adjustSize()
+            h = self.panel.sizeHint().height()
+        else:
+            # a área rolável limita o próprio sizeHint; a altura do conteúdo é calculada aqui, para a largura do painel
+            lay = self.lay
+            width = self.panel.width()
+            body_h = lay.totalHeightForWidth(width) if lay.hasHeightForWidth() else lay.sizeHint().height()
+            head = self.panel_lay.itemAt(0).widget()
+            head_h = head.sizeHint().height() if head is not None else 0
+            foot_h = self._footer_box.sizeHint().height() if self._footer_box is not None else 0
+            h = head_h + body_h + foot_h + 2
+            limit = max(limit, 260)
         self.panel.setFixedHeight(min(h, limit))
         self.panel.move((self.width() - self.panel.width()) // 2, (self.height() - self.panel.height()) // 2)
 
 
-def sheet_header(ov: SheetOverlay, title: str, cancel="Cancelar", confirm: str | None = None):
+def sheet_header(ov: SheetOverlay, title: str, cancel="Cancelar", confirm: str | None = None, scroll: bool = False):
     """Cabeçalho com Cancelar à esquerda, título no meio e confirmação à direita."""
     bar = QWidget()
     lay = QHBoxLayout(bar)
@@ -1260,7 +1316,9 @@ def sheet_header(ov: SheetOverlay, title: str, cancel="Cancelar", confirm: str |
         sp = QWidget()
         sp.setFixedWidth(c.sizeHint().width())
         lay.addWidget(sp)
-    ov.lay.addWidget(bar)
+    ov.panel_lay.addWidget(bar)
+    if scroll:
+        ov.enable_scroll()
     return ok
 
 

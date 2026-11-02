@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "Prumo PDF"
-APP_VERSION = "1.11.0"
+APP_VERSION = "1.12.0"
 
 # --- Critérios de classificação de página -----------------------------------
 # São heurísticas, não regras exatas. Ficam aqui para serem ajustadas com
@@ -40,6 +40,24 @@ MIXED_MAX_CHARS = 1000
 # pdfium (usado por pypdfium2) não é seguro para uso simultâneo em várias
 # threads. Todo acesso a pypdfium2 neste processo passa por esta trava.
 PDFIUM_LOCK = threading.RLock()
+
+
+def open_for_render(source, password: str | None = None):
+    """
+    Abre um PDF no pdfium para DESENHAR páginas (leitor, miniaturas, prévias).
+
+    O pdfium só desenha os campos de formulário (e a assinatura digital é um campo) quando o ambiente de
+    formulários está ligado; sem isso, o carimbo da assinatura simplesmente não aparecia na página.
+    Quem chama já deve estar com PDFIUM_LOCK e fecha o documento depois.
+    """
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(source, password=password) if password else pdfium.PdfDocument(source)
+    try:
+        pdf.init_forms()
+    except Exception:  # noqa: BLE001  (sem formulários, ou versão sem suporte: segue sem eles)
+        pass
+    return pdf
 
 
 # --- Caminhos ----------------------------------------------------------------

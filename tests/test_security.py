@@ -109,7 +109,7 @@ class LockedFlows(unittest.TestCase):
         import screens
         it = self.item()
         self.assertTrue(it.meta.locked)
-        self.assertFalse(self.win.lib.needs_ocr_attention(it), "PDF com senha não vai para Aguardando OCR")
+        self.assertFalse(self.win.lib.needs_ocr_attention(it), "PDF com senha não vai para Sem OCR")
         tile = screens.make_doc_tile(self.win, it)
         self.assertIn(("Com senha", "purple"), tile._badges())
 

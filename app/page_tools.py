@@ -46,7 +46,7 @@ def render_full_page(path, index: int, width_px: int) -> QImage | None:
 
     data = Path(path).read_bytes()
     with core.PDFIUM_LOCK:
-        pdf = pdfium.PdfDocument(data)
+        pdf = core.open_for_render(data)
         try:
             page = pdf[index]
             try:
@@ -475,7 +475,7 @@ def number_dialog(app, item) -> bool:
         return False
     total = item.page_count or pdfops.page_count(item.path)
     ov = SheetOverlay(app, 560)
-    sheet_header(ov, "Numerar páginas")
+    sheet_header(ov, "Numerar páginas", scroll=True)
     wrap = QHBoxLayout()
     wrap.setContentsMargins(16, 4, 16, 16)
     wrap.setSpacing(14)
@@ -511,8 +511,9 @@ def number_dialog(app, item) -> bool:
     col.addWidget(card)
     btn = PrimaryButton("Numerar", "indigo")
     col.addWidget(btn)
-    col.addWidget(Label("O número fica gravado como texto na página. Para tirar, use “Desfazer última alteração”.",
-                        12, 400, "secondary"))
+    col.addWidget(Label("O número fica gravado como texto na página. Para tirar, use “Desfazer última alteração”. "
+                        "Se a posição escolhida já tiver texto ou um número impresso, o Prumo desloca o número para "
+                        "não ficar por cima.", 12, 400, "secondary"))
     wrap.addLayout(col, 1)
     side = QVBoxLayout()
     side.addWidget(Label("Prévia", 12, 600, "secondary"))
@@ -545,7 +546,26 @@ def number_dialog(app, item) -> bool:
     if app.attempt(lambda: res.setdefault("n", app.lib.modify(item, lambda p: pdfops.number_pages(p, **opts),
                                                               keep_review=True)), busy="Numerando…"):
         n = res.get("n") or 0
-        app.toast(f"{n} página{'s' if n != 1 else ''} numerada{'s' if n != 1 else ''}. "
-                  "Use “Desfazer última alteração” se precisar.")
+        app.toast(_numbering_message(n, pdfops.LAST_NUMBERING))
         return True
     return False
+
+
+def _numbering_message(n: int, report) -> str:
+    """Aviso depois de numerar: quantas páginas e o que o Prumo fez para o número não ficar por cima de nada."""
+    parts = ["1 página numerada." if n == 1 else f"{n} páginas numeradas."]
+    if report.replaced:
+        parts.append("Os números que o Prumo tinha gravado antes nessa posição foram trocados pelos novos.")
+    if len(report.moved) == 1:
+        parts.append(f"Na página {report.moved[0]} já havia algo na posição escolhida (por exemplo, um número "
+                     "impresso); o número foi deslocado para não ficar por cima.")
+    elif report.moved:
+        parts.append(f"Nas páginas {pdfops.format_ranges(report.moved)} já havia algo na posição escolhida (por "
+                     "exemplo, um número impresso); o número foi deslocado para não ficar por cima.")
+    if len(report.crowded) == 1:
+        parts.append(f"Na página {report.crowded[0]} não achei lugar livre perto; o número ficou na posição escolhida.")
+    elif report.crowded:
+        parts.append(f"Nas páginas {pdfops.format_ranges(report.crowded)} não achei lugar livre perto; o número "
+                     "ficou na posição escolhida.")
+    parts.append("Use “Desfazer última alteração” se precisar.")
+    return " ".join(parts)

@@ -10,6 +10,7 @@ APP = os.path.join(ROOT, "app")
 
 datas = [(os.path.join(ROOT, "tessdata"), "tessdata"),
          (os.path.join(ROOT, "assets", "PrumoPDF.ico"), "assets"),
+         (os.path.join(APP, "locales"), "locales"),               # traduções da interface
          (os.path.join(ROOT, "models", "uvdoc.onnx"), "models")]   # correção de páginas curvas (UVDoc, MIT)   # ícone da janela e da barra de tarefas
 if os.path.isdir(os.path.join(ROOT, "tessdata_best")):
     datas.append((os.path.join(ROOT, "tessdata_best"), "tessdata_best"))

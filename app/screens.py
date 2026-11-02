@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboB
                                QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
                                QWidget)
 
+import ocr_langs
 import pdfops
 from ios_kit import (CircleButton, DocTile, EmptyState, FlowGrid, Label, PrimaryButton, Screen,
                      SearchField, SectionTitle, SheetOverlay, TextButton, Thumb, Tile, TileCard,
@@ -368,7 +369,7 @@ class HomeScreen(Screen):
         g = self.grid
         add(g, "all", "Todos os PDFs", "docs", "red", False, lambda: app.push(DocumentGridScreen(app, list_id="all")))
         add(g, "recent", "Recentes", "clock", "gray", False, lambda: app.push(DocumentGridScreen(app, list_id="recent")))
-        add(g, "pending", "Aguardando OCR", "textscan", "orange", True,
+        add(g, "pending", "Sem OCR", "textscan", "orange", True,
             lambda: app.push(DocumentGridScreen(app, list_id="pending")))
         add(g, "ocr", "Com OCR", "check", "green", False, lambda: app.push(DocumentGridScreen(app, list_id="ocr")))
         add(g, "favorites", "Favoritos", "star", "yellow", True,
@@ -769,7 +770,7 @@ class DocumentGridScreen(Screen):
         if q:
             return EmptyState("search", "Nada encontrado", "Tente outro termo.")
         texts = {
-            "pending": ("seal", "Nada aguardando OCR", "PDFs escaneados ou em imagem aparecem aqui até você fazer o OCR."),
+            "pending": ("seal", "Nenhum PDF sem OCR", "PDFs escaneados ou em imagem aparecem aqui até você fazer o OCR."),
             "favorites": ("star", "Nenhum favorito", "Clique na estrela de um PDF para ele aparecer aqui."),
             "ocr": ("textscan", "Nenhum PDF com OCR", "Os arquivos criados pelo OCR aparecem aqui."),
             "recent": ("clock", "Nada recente", "Os PDFs abertos ou alterados nos últimos 7 dias aparecem aqui."),
@@ -1070,7 +1071,7 @@ def split_dialog(app, item):
         app.toast("O PDF precisa ter pelo menos 2 páginas para ser dividido.")
         return
     ov = SheetOverlay(app, 440)
-    sheet_header(ov, "Dividir em partes")
+    sheet_header(ov, "Dividir em partes", scroll=True)
     card = TileCard()
     card.lay.setSpacing(10)
     card.lay.addWidget(Label(f"“{item.name}” tem {pages_text(total)}.", 15, 500))
@@ -1178,7 +1179,7 @@ def include_pages_dialog(app, item, source=None):
         source = picked[0]
     src_total = source.page_count or pdfops.page_count(source.path)
     ov = SheetOverlay(app, 460)
-    sheet_header(ov, "Incluir páginas")
+    sheet_header(ov, "Incluir páginas", scroll=True)
     card = TileCard()
     card.lay.setSpacing(8)
     same = source.id == item.id
@@ -1306,7 +1307,7 @@ def dewarp_dialog(app, item):
         return
     total = item.page_count or pdfops.page_count(item.path)
     ov = SheetOverlay(app, 640)
-    sheet_header(ov, "Corrigir páginas curvas")
+    sheet_header(ov, "Corrigir páginas curvas", scroll=True)
     card = TileCard()
     card.lay.setSpacing(8)
     card.lay.addWidget(Label("Para fotos de livros e revistas (página curvada perto da lombada), papel ondulado ou "
@@ -1421,7 +1422,7 @@ def set_app_password(app, change=False):
             app.show_error("Senha atual incorreta.")
             return
     ov = SheetOverlay(app, 420)
-    sheet_header(ov, "Nova senha do Prumo" if change else "Criar senha do Prumo")
+    sheet_header(ov, "Nova senha do Prumo" if change else "Criar senha do Prumo", scroll=True)
     card = TileCard()
     pw1, pw2 = QLineEdit(), QLineEdit()
     for e, ph in ((pw1, "Senha"), (pw2, "Repita a senha")):
@@ -1490,7 +1491,7 @@ def password_strength(pw: str) -> tuple[str, str]:
 def protect_dialog(app, item):
     """Cria uma cópia do PDF com senha (AES-256, o padrão de PDF), que abre em qualquer leitor com a senha."""
     ov = SheetOverlay(app, 460)
-    sheet_header(ov, "Proteger com senha")
+    sheet_header(ov, "Proteger com senha", scroll=True)
     card = TileCard()
     card.lay.setSpacing(8)
     card.lay.addWidget(Label(f"“{item.name}”", 15, 600))
@@ -1942,7 +1943,7 @@ def _origins(app, exclude_folder=None):
     """Origens do seletor: as abas da tela inicial e as pastas."""
     out = [("Todos os PDFs", ("list", "all")), ("Recentes", ("list", "recent")),
            ("Favoritos", ("list", "favorites")), ("Com OCR", ("list", "ocr")),
-           ("Aguardando OCR", ("list", "pending"))]
+           ("Sem OCR", ("list", "pending"))]
     if exclude_folder != "":
         out.append(("Sem pasta", ("folder", "")))
     for f in app.lib.folders:
@@ -2315,15 +2316,48 @@ class SettingsScreen(Screen):
         card.lay.addLayout(row)
         c.addWidget(card)
 
+        import i18n
+        c.addWidget(SectionTitle("Idioma do aplicativo"))
+        card = TileCard()
+        ui = QComboBox()
+        ui.addItem("Automático (idioma do Windows)", "auto")
+        for code, name in i18n.LANGUAGES:
+            ui.addItem(name, code)
+        ui.setCurrentIndex(max(0, ui.findData(app.setting("ui_language", "auto"))))
+        card.lay.addWidget(ui)
+        ui_note = Label("A mudança vale na próxima vez que você abrir o Prumo.", 13, 400, "secondary")
+        card.lay.addWidget(ui_note)
+
+        def ui_changed(_i):
+            app.set_setting("ui_language", ui.currentData())
+            msg = "A mudança vale na próxima vez que você abrir o Prumo."
+            if ui.currentData() in i18n.NEEDS_REVIEW:
+                msg += " A tradução para este idioma ainda precisa de revisão por quem o fala."
+            ui_note.setText(msg)
+        ui.currentIndexChanged.connect(ui_changed)
+        c.addWidget(card)
+
         c.addWidget(SectionTitle("OCR"))
         card = TileCard()
-        card.lay.addWidget(Label("Idioma dos documentos", 16, 600))
-        lang = QComboBox()
-        lang.addItem("Português", "por")
-        lang.addItem("Português + Inglês", "por+eng")
-        lang.setCurrentIndex(max(0, lang.findData(app.setting("ocr_language", "por"))))
-        lang.currentIndexChanged.connect(lambda _i: app.set_setting("ocr_language", lang.currentData()))
-        card.lay.addWidget(lang)
+        card.lay.addWidget(Label("Idiomas dos documentos", 16, 600))
+        card.lay.addWidget(Label("Marque até %d. Idiomas demais juntos deixam o OCR mais lento e menos preciso."
+                                 % ocr_langs.MAX_LANGS, 13, 400, "secondary"))
+        chosen = ocr_langs.parse(app.setting("ocr_language", "por"))
+        boxes: dict[str, QCheckBox] = {}
+
+        def lang_changed(_v=None):
+            codes = [c for c, b in boxes.items() if b.isChecked()]
+            if len(codes) > ocr_langs.MAX_LANGS:
+                self.sender().setChecked(False)
+                return
+            app.set_setting("ocr_language", ocr_langs.join(codes or ["por"]))
+
+        for code in ocr_langs.installed():
+            b = QCheckBox(ocr_langs.NAMES[code])
+            b.setChecked(code in chosen)
+            b.toggled.connect(lang_changed)
+            boxes[code] = b
+            card.lay.addWidget(b)
         prec = QCheckBox("Precisão máxima (bem mais lento)")
         prec.setChecked(bool(app.setting("max_precision", False)))
         prec.toggled.connect(lambda v: app.set_setting("max_precision", v))

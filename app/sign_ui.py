@@ -76,7 +76,7 @@ def sign_dialog(app, item):
     count = signing.signature_count(item.path)
 
     ov = SheetOverlay(app, 520)
-    sheet_header(ov, "Assinar digitalmente")
+    sheet_header(ov, "Assinar digitalmente", scroll=True)
     card = TileCard()
     card.lay.setSpacing(8)
     card.lay.addWidget(Label(f"“{item.name}”", 15, 600))
@@ -87,6 +87,8 @@ def sign_dialog(app, item):
         card.lay.addWidget(Label(WARNING.format(name=signing.signed_name(item)), 13, 500, "orange"))
     card.lay.addWidget(Label("Certificado", 13, 600))
     combo = QComboBox()
+    combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)   # o nome longo não alarga o painel
+    combo.setMinimumContentsLength(12)
     for c in certs:
         combo.addItem(c.label + (" · VENCIDO" if c.expired else ""), c.id)
     card.lay.addWidget(combo)
@@ -99,11 +101,9 @@ def sign_dialog(app, item):
     card.lay.addWidget(pin_note)
     more = Label("", 12, 500, "red")
     card.lay.addWidget(more)
-    add = QHBoxLayout()
-    add.addWidget(_link_button("Adicionar outro certificado A1…", lambda: ov.done("add")))
-    add.addWidget(_link_button("Procurar de novo (token conectado agora)", lambda: ov.done("again")))
-    add.addStretch(1)
-    card.lay.addLayout(add)
+    # um embaixo do outro: lado a lado, os dois exigiam mais largura que o painel (e em outros idiomas, mais ainda)
+    card.lay.addWidget(_link_button("Adicionar outro certificado A1…", lambda: ov.done("add")))
+    card.lay.addWidget(_link_button("Procurar de novo (token conectado agora)", lambda: ov.done("again")))
 
     level_card = TileCard()
     level_card.lay.setSpacing(8)
@@ -171,8 +171,8 @@ def sign_dialog(app, item):
     wrap.addWidget(level_card)
     wrap.addWidget(card2)
     btn = PrimaryButton("Assinar", "blue")
-    wrap.addWidget(btn)
     ov.lay.addLayout(wrap)
+    ov.pin_footer(btn)      # o botão fica visível mesmo quando a tela rola
 
     def current():
         cid = combo.currentData()

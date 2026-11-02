@@ -30,7 +30,7 @@ def render_page(path: str | Path, page: int, px_width: int, password: str | None
 
     with core.PDFIUM_LOCK:
         try:
-            pdf = pdfium.PdfDocument(str(path), password=password)
+            pdf = core.open_for_render(str(path), password)
         except Exception:
             return None
         try:

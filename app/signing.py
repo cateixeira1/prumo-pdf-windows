@@ -57,7 +57,10 @@ LEVELS = {
         "invalidar a assinatura. O texto e as páginas continuam travados."),
 }
 DEFAULT_LEVEL = 2
-STAMP_W, STAMP_H = 230, 48
+STAMP_W, STAMP_H = 230, 62
+STAMP_PAD_X, STAMP_PAD_Y = 6, 4          # margem interna do carimbo (pontos)
+STAMP_TITLE = "Assinado digitalmente por"
+STAMP_SAMPLE_DATE = "em 30/12/2026 23:59:59"
 
 
 # --- certificados ----------------------------------------------------------------------
@@ -416,6 +419,68 @@ def docmdp_level(path) -> int | None:
         return None
 
 
+_METRICS = None
+
+
+def _text_width(text: str, size: float) -> float:
+    """Largura real do texto em Helvetica (a do pyHanko é uma estimativa e subestima letras maiúsculas)."""
+    global _METRICS
+    try:
+        if _METRICS is None:
+            from fpdf import FPDF
+            f = FPDF(unit="pt")
+            f.set_font("Helvetica", size=100)
+            _METRICS = f
+        return _METRICS.get_string_width(text) * size / 100.0
+    except Exception:  # noqa: BLE001  (letra fora do Latin-1, ou fpdf2 ausente: estimativa por excesso)
+        return len(text) * 0.72 * size
+
+
+def _wrap_words(text: str, size: float, width: float) -> list[str]:
+    lines: list[str] = []
+    cur = ""
+    for word in text.split():
+        trial = f"{cur} {word}".strip()
+        if cur and _text_width(trial, size) > width:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = trial
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _shorten(text: str, size: float, width: float) -> str:
+    if _text_width(text, size) <= width:
+        return text
+    while text and _text_width(text + "...", size) > width:
+        text = text[:-1]
+    return text.rstrip() + "..."
+
+
+def stamp_layout(name: str) -> tuple[int, int, list[str]]:
+    """
+    (corpo da letra, entrelinha, linhas) do carimbo: “Assinado digitalmente por”, o nome (em até duas linhas) e
+    a data. Nome longo e em maiúsculas (comum na ICP-Brasil) reduz a letra até caber, sem cortar nem comprimir.
+    O pyHanko só aceita medidas inteiras aqui, por isso os corpos 8, 7 e 6.
+    """
+    name = (name or "").strip().encode("cp1252", errors="replace").decode("cp1252")
+    inner_w = STAMP_W - 2 * STAMP_PAD_X
+    inner_h = STAMP_H - 2 * STAMP_PAD_Y
+    for size, lead in ((8, 10), (7, 9), (6, 8)):
+        lines = [STAMP_TITLE] + _wrap_words(name, size, inner_w) + [STAMP_SAMPLE_DATE]
+        if len(lines) * lead <= inner_h and all(_text_width(x, size) <= inner_w for x in lines):
+            return size, lead, lines
+    size, lead = 6, 8
+    body = _wrap_words(name, size, inner_w)
+    room = max(1, inner_h // lead - 2)
+    if len(body) > room:
+        body = body[:room]
+        body[-1] = _shorten(body[-1] + " ...", size, inner_w)
+    return size, lead, [STAMP_TITLE] + [_shorten(x, size, inner_w) for x in body] + [STAMP_SAMPLE_DATE]
+
+
 def _stamp_box(path, page_choice: str, position: str, index: int) -> tuple[int, tuple[int, int, int, int]]:
     """(página, caixa no espaço do PDF) para o carimbo número `index` (0 = primeiro)."""
     import pikepdf
@@ -493,12 +558,18 @@ def sign_file(src, dest, signer, name: str, options: SignOptions) -> None:
         reason=options.reason or None, location=options.location or None, name=name or None)
     style = None
     if options.stamp:
-        safe = (name or "").replace("%", "%%")
+        from pyhanko.pdf_utils.layout import AxisAlignment, InnerScaling, Margins, SimpleBoxLayoutRule
+        size, lead, lines = stamp_layout(name)
+        text = "\n".join([x.replace("%", "%%") for x in lines[:-1]] + ["em %(ts)s"])
         style = TextStampStyle(
-            stamp_text=f"Assinado digitalmente por\n{safe}\nem %(ts)s",
+            stamp_text=text,
             timestamp_format="%d/%m/%Y %H:%M:%S",
             border_width=1,
-            text_box_style=TextBoxStyle(font=SimpleFontEngineFactory("Helvetica", 0.5), font_size=8, leading=10),
+            text_box_style=TextBoxStyle(font=SimpleFontEngineFactory("Helvetica", 0.6), font_size=size, leading=lead),
+            inner_content_layout=SimpleBoxLayoutRule(
+                x_align=AxisAlignment.ALIGN_MIN, y_align=AxisAlignment.ALIGN_MID,
+                margins=Margins(left=STAMP_PAD_X, right=STAMP_PAD_X, top=0, bottom=0),
+                inner_content_scaling=InnerScaling.NO_SCALING),
             background=None)
     pdf_signer = signers.PdfSigner(meta, signer, stamp_style=style, new_field_spec=spec)
     tmp = Path(str(dest) + ".part")
