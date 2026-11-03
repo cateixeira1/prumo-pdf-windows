@@ -67,21 +67,34 @@ jobs:
           & .venv\Scripts\python.exe tools\size_report.py dist\PrumoPDF 45 *>&1 | Out-File -Encoding utf8 "$out\size.txt"
           Get-ChildItem dist\PrumoPDF_Setup_*.exe | ForEach-Object { "{0}: {1:N1} MB" -f $_.Name, ($_.Length / 1MB) } | Out-File -Append -Encoding utf8 "$out\size.txt"
           Get-Content "$out\size.txt" -TotalCount 3 | Write-Host
-          # Tempo de abertura do aplicativo já empacotado (janela inicial desenhada e fechada), 5 vezes
-          $demo = Join-Path $env:RUNNER_TEMP "demo\Prumo PDF"
+          # Tempo de abertura do aplicativo já empacotado (janela principal desenhada), 6 vezes: a 1ª é "a frio"
           $times = @()
-          1..5 | ForEach-Object {
+          $phases = Join-Path $env:TEMP "prumo_fases.txt"
+          Remove-Item $phases -ErrorAction SilentlyContinue
+          $env:PRUMO_BENCH = $phases
+          1..6 | ForEach-Object {
               $sw = [Diagnostics.Stopwatch]::StartNew()
-              $p = Start-Process -FilePath "dist\PrumoPDF\PrumoPDF.exe" -ArgumentList @("--demo", "`"$demo`"", "--screen", "home", "--shot", "`"$env:TEMP\t$_.png`"") -PassThru
+              $p = Start-Process -FilePath "dist\PrumoPDF\PrumoPDF.exe" -PassThru
               if (-not $p.WaitForExit(120000)) { $p.Kill() }
               $times += [math]::Round($sw.Elapsed.TotalSeconds, 2)
           }
-          "abertura (s), 5 execuções: $($times -join ', ')" | Tee-Object -Append -FilePath "$out\size.txt" | Write-Host
-          # Quem demora para importar (Python solto, para ver os módulos)
-          $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList @("-X", "importtime", "app\main.py", "--demo", "`"$demo`"", "--screen", "home", "--shot", "`"$env:TEMP\it.png`"") -RedirectStandardError "$out\importtime_raw.txt" -PassThru
+          "abertura do PrumoPDF.exe (s), 6 execuções (a 1a é a frio): $($times -join ', ')" | Tee-Object -Append -FilePath "$out\size.txt" | Write-Host
+          if (Test-Path $phases) {
+              $txt = @("", "fases (última linha = execução quente):") + @(Get-Content $phases | Select-Object -Last 2)
+              $txt | Out-File -Append -Encoding utf8 "$out\size.txt"
+          }
+          # Quem demora para importar na abertura real (Python solto)
+          $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList @("-X", "importtime", "app\main.py") -RedirectStandardError "$out\importtime_raw.txt" -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill() }
+          Remove-Item Env:PRUMO_BENCH
           & .venv\Scripts\python.exe tools\importtime_report.py "$out\importtime_raw.txt" 35 *>&1 | Out-File -Encoding utf8 "$out\importtime.txt"
           Remove-Item "$out\importtime_raw.txt" -ErrorAction SilentlyContinue
+          # Tesseract instalado (para decidir o que levar no instalador)
+          "`n=== Tesseract instalado ===" | Out-File -Append -Encoding utf8 "$out\size.txt"
+          if (Test-Path "build\redist\tesseract-setup.exe") { "tesseract-setup.exe: {0:N1} MB" -f ((Get-Item "build\redist\tesseract-setup.exe").Length / 1MB) | Out-File -Append -Encoding utf8 "$out\size.txt" }
+          if (Test-Path "C:\Program Files\Tesseract-OCR") {
+              & .venv\Scripts\python.exe tools\size_report.py "C:\Program Files\Tesseract-OCR" 25 *>&1 | Out-File -Append -Encoding utf8 "$out\size.txt"
+          }
 
       - name: Capturas de tela (Windows, fonte Segoe UI)
         id: shots

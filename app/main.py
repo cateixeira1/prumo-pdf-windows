@@ -290,12 +290,20 @@ def start_instance_server(window, delay_ms: int = 700):
 
 
 def run_gui(files: list[str]) -> int:
+    import time as _time
+    _t0 = _time.perf_counter()
+    _marks: list[tuple[str, float]] = []
+
+    def mark(name: str) -> None:
+        _marks.append((name, _time.perf_counter() - _t0))
+
     from PySide6.QtCore import QSettings
 
     convert_mode = "--convert" in files
     paths = [os.path.abspath(f) for f in files if not f.startswith("--")]
     message = {"open": [] if convert_mode else paths, "convert": paths if convert_mode else []}
     app, T = _app_setup()
+    mark("qt+tema")
     if _send_to_running(message):
         return 0
     if not _is_primary():
@@ -307,16 +315,37 @@ def run_gui(files: list[str]) -> int:
                 return 0
     from app_window import MainWindow
     from ocr_runner import clean_stale_temp
+    mark("importa janela")
 
     clean_stale_temp()
+    mark("limpa temporarios")
     settings = QSettings("Prumo", "PrumoPDF")
     T.setup(str(settings.value("appearance", "system")))
     import i18n
     i18n.set_language(str(settings.value("ui_language", "auto")))
     i18n.install_hooks()
+    mark("idioma")
     w = MainWindow(settings)
+    mark("cria janela")
     w.show()
     w._instance_server = start_instance_server(w)
+    if os.environ.get("PRUMO_BENCH"):
+        # Medida de abertura (usada no CI): desenha a janela uma vez, grava os tempos e sai.
+        from PySide6.QtCore import QTimer as _BenchTimer
+
+        def _bench_done():
+            app.processEvents()
+            mark("primeira pintura")
+            prev = 0.0
+            lines = []
+            for name, t in _marks:
+                lines.append(f"{name}: {t - prev:.3f}s (acumulado {t:.3f}s)")
+                prev = t
+            with open(os.environ["PRUMO_BENCH"], "a", encoding="utf-8") as fh:
+                fh.write(" | ".join(lines) + "\n")
+            os._exit(0)
+        _BenchTimer.singleShot(0, _bench_done)
+        return app.exec()
     if message["open"] or message["convert"]:
         from PySide6.QtCore import QTimer
         QTimer.singleShot(300, lambda: w.handle_external(message["open"], message["convert"]))

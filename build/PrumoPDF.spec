@@ -45,6 +45,34 @@ a = Analysis(
     ],
     noarchive=False,
 )
+
+# --- Cortes sem perda de função (conferidos pelo relatório de tamanho do CI) ---
+# 1) opengl32sw.dll (20 MB): OpenGL por software do Qt. O Prumo só usa widgets comuns (raster), sem OpenGL.
+# 2) PIL/_avif: leitor de AVIF do Pillow (8 MB). O Prumo não aceita .avif (ver IMAGE_EXT em convert.py);
+#    HEIC/HEIF continuam pelo pillow-heif.
+# 3) Traduções do próprio Qt (7 MB, 30+ idiomas): ficam só as dos idiomas do Prumo (botões padrão de diálogos).
+_QT_LANGS = ("pt", "en", "es", "fr", "de", "ja", "zh", "nb", "sv", "da", "fi")
+
+
+def _drop_binary(entry):
+    name = os.path.basename(entry[0]).lower()
+    return name == "opengl32sw.dll" or name.startswith("_avif.")
+
+
+def _drop_data(entry):
+    dest = entry[0].replace("\\", "/").lower()
+    if "pyside6/translations/" not in dest or not dest.endswith(".qm"):
+        return False
+    stem = os.path.basename(dest)[:-3]                    # qtbase_pt_br, qt_fr, qtmultimedia_de ...
+    parts = stem.split("_", 1)
+    if parts[0] not in ("qt", "qtbase") or len(parts) < 2:
+        return True                                        # módulos que o Prumo não usa (multimedia, webengine...)
+    return parts[1].split("_")[0] not in _QT_LANGS
+
+
+a.binaries = [b for b in a.binaries if not _drop_binary(b)]
+a.datas = [d for d in a.datas if not _drop_data(d)]
+
 pyz = PYZ(a.pure)
 
 # Informações de versão do PrumoPDF.exe (aparecem em Propriedades > Detalhes no Windows).
