@@ -70,6 +70,12 @@ $tessDest = Join-Path $stage "tesseract"
 New-Item -ItemType Directory -Force -Path $tessDest | Out-Null
 Get-ChildItem $tessSrc -Force | Where-Object { $_.Name -notin @("tessdata", "doc", "unins000.exe", "unins000.dat") -and $_.Name -notlike "unins*" } |
     ForEach-Object { Copy-Item $_.FullName $tessDest -Recurse -Force }
+# O Prumo só chama o tesseract.exe. As ferramentas de treinamento do instalador (lstmtraining, text2image etc.)
+# não são usadas e pesam bastante: ficam de fora. As bibliotecas (.dll) permanecem todas, para não arriscar.
+Get-ChildItem $tessDest -Filter *.exe | Where-Object { $_.Name -ne "tesseract.exe" } | ForEach-Object {
+    Write-Host ("  fora do pacote: {0} ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+    Remove-Item $_.FullName -Force
+}
 # a biblioteca de execução do Visual C++, caso o computador não tenha
 foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
     $src = Join-Path $stage "_internal\$dll"

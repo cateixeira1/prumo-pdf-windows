@@ -5,3 +5,4 @@ build/work/
 tessdata/
 tessdata_best/
 .venv/
+tessdata_full/

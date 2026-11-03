@@ -79,6 +79,13 @@ Get-Model "tessdata_best" "por.traineddata" "tessdata_best"
 Get-Model "tessdata_best" "eng.traineddata" "tessdata_best"
 Copy-Item -Force "tessdata\osd.traineddata" "tessdata_best\osd.traineddata"
 
+# Os modelos "tessdata" trazem, além do motor LSTM (o único que o Prumo usa), o motor antigo (legacy), que
+# só ocupa espaço. Tiramos o legacy e guardamos os originais em tessdata_full (fora do pacote), para o teste
+# conferir que o texto reconhecido é idêntico.
+Step "Enxugando os modelos de idioma (tira só o motor antigo, sem mexer no LSTM)"
+& $Py build\slim_tessdata.py tessdata tessdata_full
+if ($LASTEXITCODE -ne 0) { Fail "Falha ao enxugar os modelos de idioma." }
+
 # ---------------------------------------------------------------- 4. PyInstaller
 Step "Empacotando o aplicativo"
 & $Py -m PyInstaller build\PrumoPDF.spec --noconfirm --clean --distpath dist --workpath build\work

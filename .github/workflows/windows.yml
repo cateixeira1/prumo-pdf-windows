@@ -56,6 +56,33 @@ jobs:
           if ($noise) { Write-Output "::warning::Mensagens de erro na saída dos testes: $($noise -join ' | ')" }
           exit $rc
 
+      - name: Medidas de tamanho e velocidade
+        id: measure
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $out = "$env:OUT\logs"
+          & .venv\Scripts\python.exe tools\size_report.py dist\PrumoPDF 45 *>&1 | Out-File -Encoding utf8 "$out\size.txt"
+          Get-ChildItem dist\PrumoPDF_Setup_*.exe | ForEach-Object { "{0}: {1:N1} MB" -f $_.Name, ($_.Length / 1MB) } | Out-File -Append -Encoding utf8 "$out\size.txt"
+          Get-Content "$out\size.txt" -TotalCount 3 | Write-Host
+          # Tempo de abertura do aplicativo já empacotado (janela inicial desenhada e fechada), 5 vezes
+          $demo = Join-Path $env:RUNNER_TEMP "demo\Prumo PDF"
+          $times = @()
+          1..5 | ForEach-Object {
+              $sw = [Diagnostics.Stopwatch]::StartNew()
+              $p = Start-Process -FilePath "dist\PrumoPDF\PrumoPDF.exe" -ArgumentList @("--demo", "`"$demo`"", "--screen", "home", "--shot", "`"$env:TEMP\t$_.png`"") -PassThru
+              if (-not $p.WaitForExit(120000)) { $p.Kill() }
+              $times += [math]::Round($sw.Elapsed.TotalSeconds, 2)
+          }
+          "abertura (s), 5 execuções: $($times -join ', ')" | Tee-Object -Append -FilePath "$out\size.txt" | Write-Host
+          # Quem demora para importar (Python solto, para ver os módulos)
+          $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList @("-X", "importtime", "app\main.py", "--demo", "`"$demo`"", "--screen", "home", "--shot", "`"$env:TEMP\it.png`"") -RedirectStandardError "$out\importtime_raw.txt" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill() }
+          & .venv\Scripts\python.exe tools\importtime_report.py "$out\importtime_raw.txt" 35 *>&1 | Out-File -Encoding utf8 "$out\importtime.txt"
+          Remove-Item "$out\importtime_raw.txt" -ErrorAction SilentlyContinue
+
       - name: Capturas de tela (Windows, fonte Segoe UI)
         id: shots
         if: always() && steps.build.outcome == 'success'
