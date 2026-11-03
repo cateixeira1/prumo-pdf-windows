@@ -49,7 +49,16 @@ if (-not (Test-Path $tessSetup)) { Fail "Falta $tessSetup (o build.ps1 baixa)." 
 $tessTmp = Join-Path $Root "build\work\tesseract_bundle"
 Remove-Item $tessTmp -Recurse -Force -ErrorAction SilentlyContinue
 $p = Start-Process -FilePath $tessSetup -ArgumentList "/S", "/D=$tessTmp" -Wait -PassThru
-if (-not (Test-Path "$tessTmp\tesseract.exe")) { Fail "Não consegui extrair o Tesseract (código $($p.ExitCode))." }
+# o instalador pode ignorar /D ou criar uma subpasta: procura onde o tesseract.exe foi parar
+$tessExe = Get-ChildItem $tessTmp -Recurse -Filter tesseract.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $tessExe) {
+    foreach ($d in @("$env:ProgramFiles\Tesseract-OCR", "${env:ProgramFiles(x86)}\Tesseract-OCR")) {
+        if (Test-Path "$d\tesseract.exe") { $tessExe = Get-Item "$d\tesseract.exe"; break }
+    }
+}
+if (-not $tessExe) { Fail "Não consegui extrair o Tesseract (código $($p.ExitCode))." }
+$tessTmp = $tessExe.DirectoryName
+Write-Host "Tesseract extraído em: $tessTmp"
 $tessDest = Join-Path $stage "tesseract"
 New-Item -ItemType Directory -Force -Path $tessDest | Out-Null
 Get-ChildItem $tessTmp -Force | Where-Object { $_.Name -notin @("tessdata", "doc", "unins000.exe", "unins000.dat") -and $_.Name -notlike "unins*" } |
