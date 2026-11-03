@@ -1,0 +1,88 @@
+name: Windows - pacote MSIX (teste)
+
+# Manual: Actions > "Windows - pacote MSIX (teste)" > Run workflow.
+# Gera o MSIX de teste, instala no runner, abre o aplicativo empacotado e roda o App Certification Kit.
+# Nada daqui vai para a página de versões nem mexe no instalador (setup.exe).
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONIOENCODING: utf-8
+      OUT: ${{ github.workspace }}\msix-output
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Montar o aplicativo (PyInstaller, sem testes)
+        id: build
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force "$env:OUT" | Out-Null
+          & .\build\build.ps1 -CI
+          exit $LASTEXITCODE
+
+      - name: Gerar o pacote MSIX de teste
+        id: pack
+        shell: powershell
+        run: |
+          & .\build\msix.ps1 *>&1 | Tee-Object -FilePath "$env:OUT\msix.log"
+          exit $LASTEXITCODE
+
+      - name: Instalar e abrir o pacote
+        id: smoke
+        if: always() && steps.pack.outcome == 'success'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          Import-Certificate -FilePath dist\msix\PrumoPDF_teste.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          $msix = (Get-ChildItem dist\msix\*_teste.msix | Select-Object -First 1).FullName
+          Add-AppxPackage -Path $msix
+          $pkg = Get-AppxPackage -Name PrumoPDF.Teste
+          "Instalado em: $($pkg.InstallLocation)" | Tee-Object -FilePath "$env:OUT\smoke.log"
+          $report = Join-Path $env:RUNNER_TEMP "msix_selftest.json"
+          Remove-Item $report -ErrorAction SilentlyContinue
+          Invoke-CommandInDesktopPackage -PackageFamilyName $pkg.PackageFamilyName -AppId PrumoPDF `
+            -Command "$($pkg.InstallLocation)\PrumoPDF.exe" -Args "--self-test `"$report`""
+          $end = (Get-Date).AddSeconds(180)
+          while (-not (Test-Path $report) -and (Get-Date) -lt $end) { Start-Sleep -Seconds 3 }
+          if (Test-Path $report) {
+            Get-Content $report | Tee-Object -FilePath "$env:OUT\selftest.json"
+          } else {
+            "O aplicativo empacotado não gerou o relatório em 180 s." | Tee-Object -Append -FilePath "$env:OUT\smoke.log"
+            exit 1
+          }
+
+      - name: App Certification Kit (Store)
+        id: cert
+        if: always() && steps.pack.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 40
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $kit = "${env:ProgramFiles(x86)}\Windows Kits\10\App Certification Kit\appcert.exe"
+          $msix = (Get-ChildItem dist\msix\*_teste.msix | Select-Object -First 1).FullName
+          & $kit reset
+          & $kit test -appxpackagepath $msix -reportoutputpath "$env:OUT\appcert-report.xml"
+          "appcert exit code: $LASTEXITCODE" | Tee-Object -FilePath "$env:OUT\appcert.log"
+
+      - name: Guardar os resultados
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: msix-resultados
+          path: |
+            dist/msix/*.msix
+            dist/msix/*.cer
+            msix-output/**
+            build/work/msix_stage/AppxManifest.xml
+          if-no-files-found: warn
