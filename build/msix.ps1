@@ -41,6 +41,26 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item -Recurse -Force "dist\PrumoPDF\*" $stage
 New-Item -ItemType Directory -Force -Path "$stage\Assets" | Out-Null
 
+# Tesseract dentro do pacote: o MSIX não pode rodar o instalador dele, então o instalador oficial (UB Mannheim)
+# é aberto aqui, numa pasta temporária, e só o motor (exe + DLLs) vai para o pacote. Os modelos de idioma
+# já estão em _internal\tessdata.
+$tessSetup = "build\redist\tesseract-setup.exe"
+if (-not (Test-Path $tessSetup)) { Fail "Falta $tessSetup (o build.ps1 baixa)." }
+$tessTmp = Join-Path $Root "build\work\tesseract_bundle"
+Remove-Item $tessTmp -Recurse -Force -ErrorAction SilentlyContinue
+$p = Start-Process -FilePath $tessSetup -ArgumentList "/S", "/D=$tessTmp" -Wait -PassThru
+if (-not (Test-Path "$tessTmp\tesseract.exe")) { Fail "Não consegui extrair o Tesseract (código $($p.ExitCode))." }
+$tessDest = Join-Path $stage "tesseract"
+New-Item -ItemType Directory -Force -Path $tessDest | Out-Null
+Get-ChildItem $tessTmp -Force | Where-Object { $_.Name -notin @("tessdata", "doc", "unins000.exe", "unins000.dat") -and $_.Name -notlike "unins*" } |
+    ForEach-Object { Copy-Item $_.FullName $tessDest -Recurse -Force }
+# a biblioteca de execução do Visual C++, caso o computador não tenha
+foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+    $src = Join-Path $stage "_internal\$dll"
+    if ((Test-Path $src) -and -not (Test-Path "$tessDest\$dll")) { Copy-Item $src $tessDest }
+}
+Write-Host ("Tesseract no pacote: {0:N0} MB" -f ((Get-ChildItem $tessDest -Recurse | Measure-Object Length -Sum).Sum / 1MB))
+
 $py = Join-Path $Root ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }
 & $py "build\msix_assets.py" "assets\icon_256.png" "$stage\Assets"

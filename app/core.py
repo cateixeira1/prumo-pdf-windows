@@ -78,8 +78,26 @@ def tessdata_dir(max_precision: bool = False) -> Path | None:
     return None
 
 
+def bundled_tesseract_dir() -> Path | None:
+    """Pasta `tesseract` dentro do pacote (versão MSIX/Microsoft Store), se o motor vier junto do app."""
+    d = resource_dir() / "tesseract"
+    return d if (d / "tesseract.exe").is_file() else None
+
+
+def _use_bundled_tesseract() -> None:
+    d = bundled_tesseract_dir()
+    if d is not None and str(d) not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+
+
+_use_bundled_tesseract()
+
+
 def find_tesseract() -> Path | None:
-    """Procura o tesseract.exe no PATH, no registro e em Arquivos de Programas."""
+    """Procura o tesseract.exe (primeiro o que vem no pacote), no PATH, no registro e em Arquivos de Programas."""
+    bundled = bundled_tesseract_dir()
+    if bundled is not None:
+        return bundled / "tesseract.exe"
     found = shutil.which("tesseract")
     if found:
         return Path(found)

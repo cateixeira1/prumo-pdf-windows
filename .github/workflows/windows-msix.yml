@@ -36,6 +36,16 @@ jobs:
           & .\build\msix.ps1 *>&1 | Tee-Object -FilePath "$env:OUT\msix.log"
           exit $LASTEXITCODE
 
+      - name: Gerar o pacote da Store (sem assinatura, identidade do Partner Center)
+        id: store
+        if: always() && steps.pack.outcome == 'success'
+        shell: powershell
+        run: |
+          & .\build\msix.ps1 -Store -IdentityName "ColorSoftware.PrumoPDF" `
+            -Publisher "CN=14A65191-FC80-4E0D-8BDB-C2902164E3DC" -PublisherDisplayName "Color Software" `
+            *>&1 | Tee-Object -FilePath "$env:OUT\msix-store.log"
+          exit $LASTEXITCODE
+
       - name: Instalar e abrir o pacote
         id: smoke
         if: always() && steps.pack.outcome == 'success'
@@ -60,6 +70,21 @@ jobs:
             "O aplicativo empacotado não gerou o relatório em 180 s." | Tee-Object -Append -FilePath "$env:OUT\smoke.log"
             exit 1
           }
+
+          # OCR de verdade, com o Tesseract de dentro do pacote
+          $work = Join-Path $env:RUNNER_TEMP "ocr_msix"
+          New-Item -ItemType Directory -Force $work | Out-Null
+          & .venv\Scripts\python.exe -c "import sys; sys.path.insert(0,'tests'); from pathlib import Path; from fixtures import scanned_pdf; scanned_pdf(Path(r'$work\scan.pdf'), 1)"
+          $job = @{ input = "$work\scan.pdf"; output = "$work\out.pdf"; status_file = "$work\status.jsonl"; language = "por";
+                    max_precision = $false; jobs = 2; deskew = $true; allow_signed = $false; save_txt = $false } | ConvertTo-Json
+          [System.IO.File]::WriteAllText("$work\job.json", $job, (New-Object System.Text.UTF8Encoding($false)))
+          Invoke-CommandInDesktopPackage -PackageFamilyName $pkg.PackageFamilyName -AppId PrumoPDF `
+            -Command "$($pkg.InstallLocation)\PrumoPDF.exe" -Args "--ocr-worker `"$work\job.json`""
+          $end = (Get-Date).AddSeconds(300)
+          while (-not (Test-Path "$work\out.pdf") -and (Get-Date) -lt $end) { Start-Sleep -Seconds 3 }
+          if (Test-Path "$work\status.jsonl") { Copy-Item "$work\status.jsonl" "$env:OUT\ocr-status.jsonl" }
+          if (Test-Path "$work\out.pdf") { "OCR no pacote: OK" | Tee-Object -Append -FilePath "$env:OUT\smoke.log" }
+          else { "OCR no pacote: o PDF de saída não apareceu em 300 s." | Tee-Object -Append -FilePath "$env:OUT\smoke.log"; exit 1 }
 
       - name: App Certification Kit (Store)
         id: cert
