@@ -46,9 +46,6 @@
               <uap:FileType>.pdf</uap:FileType>
             </uap:SupportedFileTypes>
             <uap:DisplayName>Documento PDF (Prumo PDF)</uap:DisplayName>
-            <uap:Verbs>
-              <uap:Verb Id="open" Parameters="&quot;%1&quot;">Open</uap:Verb>
-            </uap:Verbs>
           </uap:FileTypeAssociation>
         </uap:Extension>
       </Extensions>
