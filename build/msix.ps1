@@ -47,21 +47,28 @@ New-Item -ItemType Directory -Force -Path "$stage\Assets" | Out-Null
 $tessSetup = "build\redist\tesseract-setup.exe"
 if (-not (Test-Path $tessSetup)) { Fail "Falta $tessSetup (o build.ps1 baixa)." }
 $tessTmp = Join-Path $Root "build\work\tesseract_bundle"
-Remove-Item $tessTmp -Recurse -Force -ErrorAction SilentlyContinue
-$p = Start-Process -FilePath $tessSetup -ArgumentList "/S", "/D=$tessTmp" -Wait -PassThru
-# o instalador pode ignorar /D ou criar uma subpasta: procura onde o tesseract.exe foi parar
-$tessExe = Get-ChildItem $tessTmp -Recurse -Filter tesseract.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $tessExe) {
+function Find-Tess {
+    $e = Get-ChildItem $tessTmp -Recurse -Filter tesseract.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($e) { return $e }
     foreach ($d in @("$env:ProgramFiles\Tesseract-OCR", "${env:ProgramFiles(x86)}\Tesseract-OCR")) {
-        if (Test-Path "$d\tesseract.exe") { $tessExe = Get-Item "$d\tesseract.exe"; break }
+        if (Test-Path "$d\tesseract.exe") { return (Get-Item "$d\tesseract.exe") }
     }
+    return $null
 }
-if (-not $tessExe) { Fail "Não consegui extrair o Tesseract (código $($p.ExitCode))." }
-$tessTmp = $tessExe.DirectoryName
-Write-Host "Tesseract extraído em: $tessTmp"
+# O instalador só pode rodar uma vez por computador (na segunda ele fica esperando resposta), então só roda
+# se o tesseract.exe ainda não estiver em lugar nenhum. Ele pode ignorar /D, por isso Find-Tess olha os dois lugares.
+$tessExe = Find-Tess
+if (-not $tessExe) {
+    $p = Start-Process -FilePath $tessSetup -ArgumentList "/S", "/D=$tessTmp" -PassThru
+    if (-not $p.WaitForExit(300000)) { $p.Kill(); Fail "O instalador do Tesseract não terminou em 5 minutos." }
+    $tessExe = Find-Tess
+}
+if (-not $tessExe) { Fail "Não consegui extrair o Tesseract." }
+$tessSrc = $tessExe.DirectoryName
+Write-Host "Tesseract em: $tessSrc"
 $tessDest = Join-Path $stage "tesseract"
 New-Item -ItemType Directory -Force -Path $tessDest | Out-Null
-Get-ChildItem $tessTmp -Force | Where-Object { $_.Name -notin @("tessdata", "doc", "unins000.exe", "unins000.dat") -and $_.Name -notlike "unins*" } |
+Get-ChildItem $tessSrc -Force | Where-Object { $_.Name -notin @("tessdata", "doc", "unins000.exe", "unins000.dat") -and $_.Name -notlike "unins*" } |
     ForEach-Object { Copy-Item $_.FullName $tessDest -Recurse -Force }
 # a biblioteca de execução do Visual C++, caso o computador não tenha
 foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
