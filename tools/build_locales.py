@@ -111,6 +111,11 @@ Buscar em {}|Search in {}|Buscar en {}|Rechercher dans {}|In {} suchen|{} 内を
 """.strip().splitlines()
 
 MORE = """
+Abrir PDFs com o Prumo?|Open PDFs with Prumo?
+Assim, dois cliques em qualquer PDF abrem no Prumo. O Windows pede que você mesmo escolha: vou abrir a página certa dos Ajustes.|That way, double-clicking any PDF opens it in Prumo. Windows requires you to choose it yourself, so I will open the right Settings page.
+Agora não|Not now
+Não perguntar de novo|Don’t ask again
+Abrir os Ajustes|Open Settings
 O Prumo segue o idioma do iPhone. Para usar outro só no Prumo, abra os Ajustes do iPhone, toque em Prumo PDF e em Idioma.|Prumo follows the iPhone language. To use a different one only in Prumo, open iPhone Settings, tap Prumo PDF and then Language.
 Abrir os Ajustes do iPhone|Open iPhone Settings
 Idiomas: português, inglês, espanhol, francês, alemão, japonês, chinês (simplificado e tradicional), norueguês, sueco, dinamarquês e finlandês. O que não estiver traduzido aparece em inglês. As traduções pedem revisão por quem fala a língua.|Languages: Portuguese, English, Spanish, French, German, Japanese, Chinese (Simplified and Traditional), Norwegian, Swedish, Danish and Finnish. Anything not translated appears in English. The translations need review by a speaker of the language.

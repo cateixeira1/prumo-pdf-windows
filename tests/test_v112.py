@@ -206,6 +206,49 @@ class I18nTests(unittest.TestCase):
         self.assertTrue({"deu", "fra", "spa", "eng", "jpn", "chi_sim", "chi_tra", "nor", "swe", "dan", "fin"} <= codes)
 
 
+class DefaultAppTests(unittest.TestCase):
+    def test_settings_uri_for_installer_and_store(self):
+        import default_app
+        os.environ.pop("PRUMO_FORCE_PACKAGED", None)
+        self.assertEqual(default_app.settings_uri(), "ms-settings:defaultapps?registeredAppMachine=Prumo%20PDF")
+        os.environ["PRUMO_FORCE_PACKAGED"] = "1"
+        try:
+            self.assertEqual(default_app.settings_uri(),
+                             "ms-settings:defaultapps?registeredAUMID=ColorSoftware.PrumoPDF_597630k0h63h8%21PrumoPDF")
+        finally:
+            os.environ.pop("PRUMO_FORCE_PACKAGED", None)
+
+    def test_should_offer_rules(self):
+        import core
+        import default_app
+        os.environ.pop("PRUMO_NO_PROMPTS", None)
+        real = default_app.is_default_pdf_app
+        try:
+            default_app.is_default_pdf_app = lambda: False
+            on_windows = os.name == "nt"
+            self.assertEqual(default_app.should_offer(lambda k, d=None: d), on_windows)
+            self.assertFalse(default_app.should_offer(lambda k, d=None: "never" if k == "default_pdf_prompt" else d))
+            self.assertFalse(default_app.should_offer(
+                lambda k, d=None: core.APP_VERSION if k == "default_pdf_prompt_version" else d))
+            default_app.is_default_pdf_app = lambda: True
+            self.assertFalse(default_app.should_offer(lambda k, d=None: d))
+        finally:
+            default_app.is_default_pdf_app = real
+
+    def test_detects_default_handler_name(self):
+        import default_app
+        real = default_app.default_pdf_exe
+        try:
+            default_app.default_pdf_exe = lambda: r"C:\Program Files\Prumo PDF\PrumoPDF.exe"
+            self.assertTrue(default_app.is_default_pdf_app())
+            default_app.default_pdf_exe = lambda: r"C:\Program Files\Adobe\Acrobat.exe"
+            self.assertFalse(default_app.is_default_pdf_app())
+            default_app.default_pdf_exe = lambda: None
+            self.assertIsNone(default_app.is_default_pdf_app())
+        finally:
+            default_app.default_pdf_exe = real
+
+
 class UiTests(unittest.TestCase):
     def test_sem_ocr_label(self):
         from library import LISTS

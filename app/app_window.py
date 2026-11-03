@@ -739,6 +739,24 @@ class MainWindow(QMainWindow):
             self.toast("O OCR deste PDF já está em andamento.")
         self.current().refresh()
 
+    def offer_default_pdf(self, force: bool = False):
+        """Convida o usuário a tornar o Prumo o leitor padrão de PDF (a troca em si é feita por ele, no Windows)."""
+        import default_app
+        if not force and not default_app.should_offer(self.setting):
+            return
+        import core
+        self.set_setting("default_pdf_prompt_version", core.APP_VERSION)
+        idx = alert(self, "Abrir PDFs com o Prumo?",
+                    "Assim, dois cliques em qualquer PDF abrem no Prumo. O Windows pede que você mesmo escolha: "
+                    "vou abrir a página certa dos Ajustes.",
+                    [("Agora não", "cancel"), ("Não perguntar de novo", "destructive"), ("Abrir os Ajustes", "default")])
+        if idx == 1:
+            self.set_setting("default_pdf_prompt", "never")
+        elif idx == 2:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(default_app.settings_uri()))
+
     def _cancel_ocr(self):
         idx = alert(self, "Cancelar o OCR?", "O arquivo original não muda.",
                     [("Continuar", "cancel"), ("Cancelar OCR", "destructive")])

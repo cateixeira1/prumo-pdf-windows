@@ -320,6 +320,9 @@ def run_gui(files: list[str]) -> int:
     if message["open"] or message["convert"]:
         from PySide6.QtCore import QTimer
         QTimer.singleShot(300, lambda: w.handle_external(message["open"], message["convert"]))
+    if not (message["open"] or message["convert"]):
+        from PySide6.QtCore import QTimer as _QTimer
+        _QTimer.singleShot(3000, w.offer_default_pdf)
     return app.exec()
 
 

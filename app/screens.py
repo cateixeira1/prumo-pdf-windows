@@ -2311,7 +2311,7 @@ class SettingsScreen(Screen):
             "escolha o Prumo PDF como aplicativo padrão para .pdf nas configurações do Windows.", 13.5))
         row = QHBoxLayout()
         row.addWidget(small_button("Aplicativos padrão do Windows…",
-                                   lambda: QDesktopServices.openUrl(QUrl("ms-settings:defaultapps"))))
+                                   lambda: QDesktopServices.openUrl(QUrl(__import__("default_app").settings_uri()))))
         row.addStretch(1)
         card.lay.addLayout(row)
         c.addWidget(card)
