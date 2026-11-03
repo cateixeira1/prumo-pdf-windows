@@ -80,8 +80,13 @@ def tessdata_dir(max_precision: bool = False) -> Path | None:
 
 def bundled_tesseract_dir() -> Path | None:
     """Pasta `tesseract` dentro do pacote (versão MSIX/Microsoft Store), se o motor vier junto do app."""
-    d = resource_dir() / "tesseract"
-    return d if (d / "tesseract.exe").is_file() else None
+    cands = [resource_dir() / "tesseract"]
+    if getattr(sys, "frozen", False):          # no pacote MSIX a pasta fica ao lado do PrumoPDF.exe
+        cands.append(Path(sys.executable).resolve().parent / "tesseract")
+    for d in cands:
+        if (d / "tesseract.exe").is_file():
+            return d
+    return None
 
 
 def _use_bundled_tesseract() -> None:

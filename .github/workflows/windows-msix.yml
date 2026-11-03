@@ -66,6 +66,11 @@ jobs:
           while (-not (Test-Path $report) -and (Get-Date) -lt $end) { Start-Sleep -Seconds 3 }
           if (Test-Path $report) {
             Get-Content $report | Tee-Object -FilePath "$env:OUT\selftest.json"
+            # o motor de OCR tem que ser o de dentro do pacote, não um que por acaso exista no computador
+            if ((Get-Content $report -Raw) -notmatch "WindowsApps[^`"]*tesseract") {
+              "ERRO: o app empacotado não usou o Tesseract de dentro do pacote." | Tee-Object -Append -FilePath "$env:OUT\smoke.log"
+              exit 1
+            }
           } else {
             "O aplicativo empacotado não gerou o relatório em 180 s." | Tee-Object -Append -FilePath "$env:OUT\smoke.log"
             exit 1
