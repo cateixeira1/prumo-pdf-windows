@@ -424,6 +424,10 @@ def self_test(report_file: str) -> int:
         import dewarp
         result["dewarp"] = dewarp.available()
         result["version"] = core.APP_VERSION
+        import machine
+        m = machine.current()
+        result["machine"] = m.describe()
+        result["ocr_jobs"] = machine.ocr_jobs(False, m)
         result["ok"] = bool(result["tessdata"]) and bool(result["icon"]) and result["heic"] is True and result["dewarp"]
     except Exception as exc:
         result["ok"] = False

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -25,9 +26,12 @@ REVIEW_LOW_RATIO = 0.10
 # --- Miniaturas ---------------------------------------------------------------
 
 def render_page(path: str | Path, page: int, px_width: int, password: str | None = None) -> QImage | None:
-    """Renderiza uma página (começando em 0) com a largura pedida, em pixels."""
-    import pypdfium2 as pdfium
+    """
+    Renderiza uma página (começando em 0) com a largura pedida, em pixels.
 
+    A página sai do PDFium no formato de 4 bytes por pixel (BGRx) que é o mesmo do Qt (Format_RGB32):
+    uma cópia só, e o Qt desenha sem converter a cada pintura (rolar e dar zoom fica mais leve).
+    """
     with core.PDFIUM_LOCK:
         try:
             pdf = core.open_for_render(str(path), password)
@@ -39,14 +43,16 @@ def render_page(path: str | Path, page: int, px_width: int, password: str | None
             pg = pdf[page]
             try:
                 w = pg.get_width() or 1
-                bmp = pg.render(scale=max(0.05, px_width / w), rev_byteorder=True)
-                pil = bmp.to_pil().convert("RGB")
+                bmp = pg.render(scale=max(0.05, px_width / w), prefer_bgrx=True)
+                try:
+                    img = QImage(bmp.buffer, bmp.width, bmp.height, bmp.stride, QImage.Format_RGB32).copy()
+                finally:
+                    bmp.close()
             finally:
                 pg.close()
         finally:
             pdf.close()
-    data = pil.tobytes()
-    return QImage(data, pil.width, pil.height, pil.width * 3, QImage.Format_RGB888).copy()
+    return img
 
 
 class _Emitter(QObject):
@@ -62,6 +68,8 @@ class _ThumbJob(QRunnable):
         img = QImage()
         if self.disk.exists():
             img.load(str(self.disk))
+            if not img.isNull():
+                _touch(self.disk)
         if img.isNull():
             img = render_page(self.path, self.page, self.px) or QImage()
             if not img.isNull():
@@ -72,25 +80,63 @@ class _ThumbJob(QRunnable):
         self.emitter.done.emit(self.key, img)
 
 
-class Thumbnails(QObject):
-    ready = Signal(str)
+def _touch(path: Path) -> None:
+    """Marca a miniatura do disco como usada (a limpeza apaga primeiro as que ninguém vê há tempo)."""
+    try:
+        if time.time() - path.stat().st_mtime > 3 * 86400:
+            os.utime(path)
+    except OSError:
+        pass
 
-    def __init__(self, cache_dir: Path):
+
+def request_priority() -> int:
+    """
+    Ordem dos desenhos na fila: o que a tela pediu por último vai primeiro (rolar rápido não espera o
+    que já passou); dentro da mesma pintura (0,1 s), na ordem pedida, de cima para baixo.
+    """
+    return int(time.monotonic() * 10) % 2_000_000_000
+
+
+def px_bucket(px: int) -> int:
+    """
+    Arredonda a largura pedida para cima, em degraus: ao redimensionar a janela, as miniaturas
+    não são desenhadas (nem gravadas no disco) de novo a cada pixel.
+    """
+    px = max(16, int(px))
+    step = 16 if px <= 128 else 32 if px <= 512 else 64
+    return (px + step - 1) // step * step
+
+
+class Thumbnails(QObject):
+    """Miniaturas das páginas, na memória (até um limite em bytes que depende do computador) e no disco."""
+
+    ready = Signal(str)
+    KEEP_MIN = 128            # nunca menos que isso na memória (o que está na tela não pode sair)
+
+    def __init__(self, cache_dir: Path, budget: int | None = None):
         super().__init__()
+        import machine
         self.cache_dir = cache_dir
+        self.budget = budget or machine.thumb_cache_bytes()
+        self.used = 0
         self.mem: OrderedDict[str, QImage] = OrderedDict()
+        self.best: dict[str, QImage] = {}       # página -> última miniatura pronta (qualquer tamanho)
         self.pending: set[str] = set()
         self.pool = QThreadPool(self)
-        self.pool.setMaxThreadCount(2)
+        self.pool.setMaxThreadCount(machine.thumb_threads())
         self.emitter = _Emitter()
         self.emitter.done.connect(self._done)
 
     @staticmethod
     def key(path, version, page, px) -> str:
-        return f"{path}|{version}|{page}|{px}"
+        return f"{path}|{version}|{page}|{px_bucket(px)}"
+
+    @staticmethod
+    def _base(key: str) -> str:
+        return key.rsplit("|", 1)[0]
 
     def get(self, path: str | Path, version: str, page: int, px: int) -> QImage | None:
-        px = max(16, int(px))
+        """A miniatura pronta; se ainda não houver, pede e devolve a última de outro tamanho (ou None)."""
         k = self.key(path, version, page, px)
         img = self.mem.get(k)
         if img is not None:
@@ -99,16 +145,61 @@ class Thumbnails(QObject):
         if k not in self.pending:
             self.pending.add(k)
             disk = self.cache_dir / (hashlib.sha1(k.encode()).hexdigest() + ".png")
-            self.pool.start(_ThumbJob(k, str(path), page, px, disk, self.emitter))
-        return None
+            self.pool.start(_ThumbJob(k, str(path), page, px_bucket(px), disk, self.emitter), request_priority())
+        return self.best.get(self._base(k))
 
     def _done(self, key: str, img: QImage):
         self.pending.discard(key)
         if not img.isNull():
+            old = self.mem.pop(key, None)
+            if old is not None:
+                self.used -= old.sizeInBytes()
             self.mem[key] = img
-            while len(self.mem) > 500:
-                self.mem.popitem(last=False)
+            self.used += img.sizeInBytes()
+            self.best[self._base(key)] = img
+            while self.used > self.budget and len(self.mem) > self.KEEP_MIN:
+                k, gone = self.mem.popitem(last=False)
+                self.used -= gone.sizeInBytes()
+                if self.best.get(self._base(k)) is gone:
+                    del self.best[self._base(k)]
         self.ready.emit(key)
+
+
+def prune_thumb_cache(folder: Path, budget: int | None = None, max_age_days: int = 90) -> tuple[int, int]:
+    """
+    Limpa o cache de miniaturas no disco: apaga as que ninguém vê há `max_age_days` dias e, se ainda
+    passar do limite (1% do espaço livre, entre 32 e 256 MB), as mais antigas. Devolve (apagadas, bytes).
+    """
+    import machine
+    budget = budget or machine.thumb_disk_bytes(folder)
+    files = []
+    try:
+        with os.scandir(folder) as it:
+            for e in it:
+                if e.name.endswith(".png") and e.is_file():
+                    try:
+                        st = e.stat()
+                    except OSError:
+                        continue
+                    files.append((st.st_mtime, st.st_size, e.path))
+    except OSError:
+        return 0, 0
+    files.sort()                                         # as mais antigas primeiro
+    limit = time.time() - max_age_days * 86400
+    total = sum(f[1] for f in files)
+    target = budget * 3 // 4 if total > budget else total   # passou do limite: desce até 3/4 dele
+    removed = freed = 0
+    for mtime, size, path in files:
+        if mtime >= limit and total <= target:
+            break
+        try:
+            os.remove(path)
+        except OSError:
+            continue
+        total -= size
+        removed += 1
+        freed += size
+    return removed, freed
 
 
 # --- Análise ------------------------------------------------------------------
@@ -140,6 +231,8 @@ class LibraryHub(QObject):
         super().__init__()
         self.lib = library
         self.thumbs = Thumbnails(library.thumbs_dir)
+        # Limpeza do cache de miniaturas no disco: depois que a janela abriu, em segundo plano.
+        QTimer.singleShot(20_000, self._prune_thumbs)
         self._thread: _AnalysisThread | None = None
         self._again = False
         self._timer = QTimer(self)
@@ -168,7 +261,7 @@ class LibraryHub(QObject):
         t.result.connect(self._apply)
         t.finished.connect(self._finished)
         self._thread = t
-        t.start()
+        t.start(QThread.Priority.LowPriority)      # analisar PDFs novos não pode disputar com a janela
 
     def _apply(self, id, sig, result):
         self.lib.apply_analysis(id, sig, result)
@@ -182,6 +275,10 @@ class LibraryHub(QObject):
         if self._again:
             self._again = False
             self.analyze_pending()
+
+    def _prune_thumbs(self):
+        import threading
+        threading.Thread(target=prune_thumb_cache, args=(self.lib.thumbs_dir,), daemon=True).start()
 
     def shutdown(self):
         if self._thread is not None:
@@ -244,6 +341,7 @@ class JobCenter(QObject):
     def _next(self):
         if self.current is not None or not self.queue:
             return
+        import machine
         from ocr_runner import OcrRunner
 
         job = self.queue.pop(0)
@@ -258,7 +356,7 @@ class JobCenter(QObject):
             "output": str(self._output),
             "language": self.settings_get("ocr_language", "por"),
             "max_precision": bool(self.settings_get("max_precision", False)),
-            "jobs": max(1, (os.cpu_count() or 4) - 1),
+            "jobs": machine.ocr_jobs(bool(self.settings_get("max_precision", False))),
             "deskew": True,
             "allow_signed": job.allow_signed,
             "save_txt": False,

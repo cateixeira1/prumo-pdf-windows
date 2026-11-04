@@ -83,6 +83,9 @@ jobs:
               $txt = @("", "fases (última linha = execução quente):") + @(Get-Content $phases | Select-Object -Last 2)
               $txt | Out-File -Append -Encoding utf8 "$out\size.txt"
           }
+          # Perfil do computador do CI e custo de desenhar/pintar uma página (antes x agora)
+          "`n=== Computador e desenho das páginas ===" | Out-File -Append -Encoding utf8 "$out\size.txt"
+          & .venv\Scripts\python.exe tools\render_bench.py *>&1 | Out-File -Append -Encoding utf8 "$out\size.txt"
           # Quem demora para importar na abertura real (Python solto)
           $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList @("-X", "importtime", "app\main.py") -RedirectStandardError "$out\importtime_raw.txt" -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill() }

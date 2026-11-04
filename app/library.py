@@ -237,13 +237,15 @@ class Library:
     def reload(self) -> None:
         self._sync_disk()
         files, dirs = [], []
+        tree = hashlib.sha1()        # a mesma conta de _scan_tree, feita na mesma passada pela pasta
         for dirpath, dirnames, filenames in os.walk(self.root):
             dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != META_DIR)
+            tree.update(dirpath.encode("utf-8", "surrogatepass"))
             rel_dir = os.path.relpath(dirpath, self.root).replace(os.sep, "/")
             rel_dir = "" if rel_dir == "." else rel_dir
             for d in dirnames:
                 dirs.append(f"{rel_dir}/{d}" if rel_dir else d)
-            for f in filenames:
+            for f in sorted(filenames):
                 if f.startswith(".") or not f.lower().endswith(".pdf"):
                     continue
                 full = Path(dirpath) / f
@@ -251,6 +253,7 @@ class Library:
                     st = full.stat()
                 except OSError:
                     continue
+                tree.update(f"{f}|{st.st_size}|{st.st_mtime_ns}".encode("utf-8", "surrogatepass"))
                 rel = f"{rel_dir}/{f}" if rel_dir else f
                 files.append((full, rel, st.st_size, st.st_mtime))
 
@@ -283,7 +286,7 @@ class Library:
                 total_doc_count=sum(1 for i in items if i.rel.startswith(prefix)),
                 subfolder_count=sum(1 for x in dirs if x.rsplit("/", 1)[0] == d and "/" in x)))
         self._known |= {m.path.lower() for m in new_metas.values()}
-        self._tree = self._scan_tree()
+        self._tree = tree.hexdigest()
         if changed:
             self.save_meta()
         self._changed()

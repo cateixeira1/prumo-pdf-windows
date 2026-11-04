@@ -200,7 +200,9 @@ class PageGrid(QWidget):
         return area
 
     def _paint_thumb(self, p: QPainter, area: QRectF, page: int, rot: int, opacity=1.0):
-        px = int(max(area.width(), area.height()) * self.devicePixelRatioF())
+        # Largura da imagem que cabe na célula: a da célula, ou a altura dela com a página deitada.
+        # (Antes pedia sempre a maior das duas: em página de pé, quase o dobro de pixels sem ganho.)
+        px = int((area.height() if rot in (90, 270) else area.width()) * self.devicePixelRatioF())
         img = self.thumbs.get(self.item.path, self.item.version, page - 1, px)
         p.save()
         p.setOpacity(opacity)

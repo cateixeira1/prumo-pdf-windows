@@ -19,6 +19,7 @@ Ctrl+Z desfaz o último destaque.
 
 from __future__ import annotations
 
+import time
 from collections import OrderedDict
 
 from PySide6.QtCore import QObject, QPointF, QRectF, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (QAbstractButton, QFrame, QHBoxLayout, QPushButton
 
 import annotations
 import core
+import machine
 import reader_text
 from reader_history import ReaderHistory
 from reader_select import SelectionToolbar
@@ -64,28 +66,45 @@ class _Signals(QObject):
 
 
 class _Render(QRunnable):
-    def __init__(self, path, page, px, signals, password=None, generation=0):
+    def __init__(self, path, page, px, signals, password=None, generation=0, wanted=None):
         super().__init__()
         self.path, self.page, self.px, self.signals, self.password = path, page, px, signals, password
         self.generation = generation
+        self.wanted = wanted
 
     def run(self):
+        # Página que saiu da tela enquanto esperava a vez (rolagem rápida): não gasta processador com ela.
+        if self.wanted is not None and time.monotonic() - self.wanted.get((self.page, self.px), 0.0) > STALE_S:
+            self.signals.done.emit(self.page, self.px, (self.generation, None))
+            return
         from services import render_page
         img = render_page(self.path, self.page, self.px, self.password)
         self.signals.done.emit(self.page, self.px, (self.generation, img if img is not None else QImage()))
 
 
+STALE_S = 2.0      # pedido sem repetir há mais que isso: a página já não está na tela
+
+
 class PageCache(QObject):
-    """Páginas renderizadas sob demanda, com poucas na memória (páginas grandes ocupam muito)."""
+    """
+    Páginas renderizadas sob demanda. Ficam na memória até um limite em bytes que depende do
+    computador (ver machine.page_cache_bytes); as mais antigas saem primeiro. A página pedida por
+    último é desenhada primeiro, para a rolagem rápida não ficar esperando as que já passaram.
+    """
 
     ready = Signal(int)
+    KEEP_MIN = 4       # nunca menos que isso: as páginas visíveis não podem sair (zoom alto)
 
-    def __init__(self, path, limit=14, password=None):
+    def __init__(self, path, limit=80, password=None, budget=None):
         super().__init__()
+        import machine
         self.path, self.limit, self.password = str(path), limit, password
+        self.budget = budget or machine.page_cache_bytes()
+        self.used = 0
         self.mem: OrderedDict[tuple[int, int], QImage] = OrderedDict()
         self.best: dict[int, QImage] = {}
         self.pending: set[tuple[int, int]] = set()
+        self.wanted: dict[tuple[int, int], float] = {}
         self.generation = 0
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(2)
@@ -99,9 +118,12 @@ class PageCache(QObject):
         if img is not None:
             self.mem.move_to_end(key)
             return img
+        self.wanted[key] = time.monotonic()
         if key not in self.pending:
             self.pending.add(key)
-            self.pool.start(_Render(self.path, page, px, self.signals, self.password, self.generation))
+            from services import request_priority
+            self.pool.start(_Render(self.path, page, px, self.signals, self.password, self.generation,
+                                    self.wanted), request_priority())
         return self.best.get(page)   # enquanto isso, a melhor versão que já existe (ampliada)
 
     def _done(self, page, px, payload):
@@ -109,12 +131,22 @@ class PageCache(QObject):
         if generation != self.generation:
             return   # página de antes de o arquivo mudar
         self.pending.discard((page, px))
+        if img is None:              # pulada porque saiu da tela: se ainda estiver lá, a tela pede de novo
+            self.wanted.pop((page, px), None)
+            self.ready.emit(page)
+            return
+        self.wanted.pop((page, px), None)
         if img.isNull():
             return
+        old = self.mem.pop((page, px), None)
+        if old is not None:
+            self.used -= old.sizeInBytes()
         self.mem[(page, px)] = img
+        self.used += img.sizeInBytes()
         self.best[page] = img
-        while len(self.mem) > self.limit:
+        while len(self.mem) > self.KEEP_MIN and (len(self.mem) > self.limit or self.used > self.budget):
             (old_page, _), _img = self.mem.popitem(last=False)
+            self.used -= _img.sizeInBytes()
             if self.best.get(old_page) is _img:
                 self.best.pop(old_page, None)
         self.ready.emit(page)
@@ -125,7 +157,9 @@ class PageCache(QObject):
             self.path = str(path)
         self.generation += 1
         self.mem.clear()
+        self.used = 0
         self.pending.clear()
+        self.wanted.clear()
 
     def shutdown(self):
         self.pool.clear()
@@ -748,7 +782,7 @@ class ThumbSidebar(QScrollArea):
             return None
         if pw:   # PDF com senha: as miniaturas comuns não abrem; usa um cache próprio
             if self._own is None:
-                self._own = PageCache(item.path, limit=40, password=pw)
+                self._own = PageCache(item.path, limit=400, password=pw, budget=machine.thumb_cache_bytes())
                 self._own.ready.connect(lambda _p: self.list.update())
             return self._own.get(page, px)
         return self.screen.app.hub.thumbs.get(item.path, item.version, page, max(64, px // 16 * 16 + 16))

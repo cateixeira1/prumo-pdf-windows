@@ -32,7 +32,7 @@ a = Analysis(
         "screens", "app_window", "demo", "organize", "reader", "reader_text", "convert", "backup", "dewarp", "onnxruntime", "security",
         "mammoth", "pillow_heif", "img2pdf",
         "annotations", "summary", "page_tools", "page_view", "rubberband", "reader_history", "reader_select",
-        "signing", "sign_ui", "pyhanko", "pyhanko.sign", "pyhanko.sign.signers", "pyhanko.stamp",
+        "signing", "sign_ui", "machine", "pyhanko", "pyhanko.sign", "pyhanko.sign.signers", "pyhanko.stamp",
         "pyhanko.pdf_utils.incremental_writer", "pyhanko.pdf_utils.font.basic", "pyhanko_certvalidator",
         "tzlocal", "tzdata",
     ],

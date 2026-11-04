@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         if geo is not None:
             self.restoreGeometry(geo)
         else:
-            self.resize(1100, 780)
+            self._first_size()
 
     # --- trava com senha ---
     def _setup_lock(self):
@@ -824,15 +824,39 @@ class MainWindow(QMainWindow):
         if getattr(self, "lock", None) is not None and self.lock.isVisible():
             self.lock.raise_()
 
+    def _first_size(self):
+        """Primeira abertura: 1100 × 780, mas nunca maior que a tela (notebooks com tela pequena ou zoom alto)."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            self.resize(1100, 780)
+            return
+        area = screen.availableGeometry()
+        w = max(self.minimumWidth(), min(1100, int(area.width() * 0.92)))
+        h = max(self.minimumHeight(), min(780, int(area.height() * 0.92)))
+        self.resize(w, h)
+        self.move(area.x() + (area.width() - w) // 2, area.y() + max(0, (area.height() - h) // 2))
+
+    SYNC_MIN_MS, SYNC_MAX_MS = 20_000, 120_000
+
     def _sync_tick(self):
+        import time
         from ios_kit import BusyOverlay, _Overlay
         busy = any(o.isVisible() for o in self.findChildren(_Overlay)) or \
             any(o.isVisible() for o in self.findChildren(BusyOverlay))
         if self.isVisible() and not self.isMinimized() and not busy:
+            t0 = time.perf_counter()
             try:
                 self.lib.reload_if_changed()
             except OSError:
                 pass
+            # Biblioteca grande (ou numa nuvem lenta): confere com menos frequência, para a conferência
+            # nunca passar de ~0,5% do tempo. Quando o Prumo volta para a frente, confere na hora.
+            spent_ms = (time.perf_counter() - t0) * 1000
+            interval = int(min(self.SYNC_MAX_MS, max(self.SYNC_MIN_MS, spent_ms * 200)))
+            if not self.isActiveWindow():
+                interval = min(self.SYNC_MAX_MS, interval * 3)
+            if abs(interval - self._sync_timer.interval()) > 1000:
+                self._sync_timer.setInterval(interval)
 
     def changeEvent(self, e):
         from PySide6.QtCore import QEvent

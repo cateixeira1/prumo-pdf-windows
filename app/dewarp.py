@@ -51,8 +51,16 @@ def _get_session():
             if path is None:
                 from pdfops import UserError
                 raise UserError("O modelo de correção de curvatura não foi encontrado na instalação.")
+            import machine
             opts = ort.SessionOptions()
             opts.log_severity_level = 3
+            # Núcleos conforme o computador (um fica para a janela quando há mais de dois) e sem "espera
+            # ativa": por padrão, os núcleos do ONNX Runtime ficam girando à procura de trabalho entre um
+            # passo e outro. Medido (2 núcleos): 157 ms e 300 ms de processador por página sem a espera
+            # ativa, contra 195 ms e 378 ms com ela.
+            opts.intra_op_num_threads = machine.onnx_threads()
+            opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
+            opts.add_session_config_entry("session.inter_op.allow_spinning", "0")
             _session = ort.InferenceSession(str(path), sess_options=opts, providers=["CPUExecutionProvider"])
         return _session
 

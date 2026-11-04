@@ -254,14 +254,15 @@ class OcrPage(QWidget):
         row = QHBoxLayout()
         row.addWidget(QLabel("Páginas em paralelo:"))
         self.jobs = QComboBox()
-        cpu = os.cpu_count() or 2
-        default_jobs = max(1, cpu // 2)
+        import machine
+        cpu = machine.current().logical
+        default_jobs = min(cpu, machine.ocr_jobs())   # conforme núcleos, memória livre e bateria
         for n in range(1, cpu + 1):
             self.jobs.addItem(f"{n} (padrão)" if n == default_jobs else str(n), n)
         saved = int(s.value("ocr_jobs", default_jobs))
         self.jobs.setCurrentIndex(max(0, min(cpu, saved) - 1))
-        self.jobs.setToolTip("Quantas páginas são lidas ao mesmo tempo. O padrão usa metade dos\n"
-                             "processadores lógicos, para o computador continuar respondendo.")
+        self.jobs.setToolTip("Quantas páginas são lidas ao mesmo tempo. O padrão depende deste computador\n"
+                             "(núcleos, memória livre e bateria) e deixa um processador livre.")
         row.addWidget(self.jobs)
         row.addStretch(1)
         lay.addLayout(row)

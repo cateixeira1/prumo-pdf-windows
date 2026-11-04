@@ -35,13 +35,20 @@ Os PDFs ficam como arquivos comuns na pasta **Documentos › Prumo PDF** (dá pa
 - **Backup:** os Ajustes mostram se os PDFs estão só neste computador ou numa nuvem. Se o OneDrive, o Google Drive, o iCloud Drive ou o Dropbox estiverem instalados, um clique leva a biblioteca para lá (com backup automático). Também dá para fazer uma **cópia de segurança** completa (PDFs, pastas e favoritos) num pendrive ou HD externo e **restaurar** depois, sem duplicar arquivos. A cópia é uma pasta comum e abre também no Prumo para iPhone.
 - **No Windows:** o Prumo aparece em **Abrir com** nos PDFs (sem trocar o seu leitor padrão) e, no botão direito de fotos e arquivos do Word, Excel e PowerPoint, em **Converter em PDF com o Prumo**. Com o Prumo já aberto, os arquivos vão para a mesma janela.
 
+- **Ajustado a cada computador:** o Prumo não foi feito para uma máquina específica. Ao abrir, ele mede núcleos, memória e bateria (sem gravar nem enviar nada) e decide quanto pode usar:
+  - **OCR:** lê várias páginas ao mesmo tempo, deixando um processador livre e respeitando a memória livre (num computador com pouca memória, uma página por vez). Na bateria, usa no máximo metade dos núcleos; com a economia de bateria ligada, uma página por vez. O OCR roda com **prioridade abaixo do normal**: quando você está em outro programa, o Windows atende o outro programa primeiro.
+  - **Leitor e miniaturas:** guardam na memória só o que cabe (proporcional à memória do computador); as páginas são desenhadas no formato próprio do Qt, e a página pedida por último é desenhada primeiro (rolar rápido não fica esperando as páginas que já passaram).
+  - **Cache de miniaturas no disco:** limpo sozinho (miniaturas sem uso há 90 dias e, no máximo, 1% do espaço livre, até 256 MB).
+  - **Correção de páginas curvas:** usa os núcleos físicos (menos um, quando há mais de dois), sem deixar núcleos girando à toa.
+  - **Biblioteca na nuvem:** a conferência de mudanças fica mais espaçada quando a biblioteca é grande ou quando o Prumo está em segundo plano.
+
 A tela antiga (OCR em lote) continua disponível pelo atalho com `--classico`.
 
 ---
 
 ## 1. Instalar
 
-1. Baixe o **PrumoPDF_Setup_1.12.0.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
+1. Baixe o **PrumoPDF_Setup_1.12.1.exe**: ele vem pronto, já com o Tesseract, e também fica na página **Releases** deste repositório (“Prumo PDF para Windows (última versão)”).
 2. Dê dois cliques nele. Como o instalador não tem assinatura digital de empresa, o Windows pode mostrar “O Windows protegeu o computador”. Clique em **Mais informações** e depois em **Executar assim mesmo**.
 3. O instalador coloca o Prumo PDF em Arquivos de Programas, cria os atalhos e, se o computador ainda não tiver, instala o **Tesseract** (o motor de OCR) automaticamente.
 
@@ -107,6 +114,7 @@ app/            código do aplicativo (Python + PySide6)
   library.py      biblioteca (pastas reais + metadados em .prumo/library.json)
   pdfops.py       remover, extrair, incluir, reorganizar, dividir
   services.py     miniaturas, análise em segundo plano, fila de OCR
+  machine.py      perfil do computador (núcleos, memória, bateria) e os limites que dependem dele
   core.py         análise de páginas, combinar, extrair
   ocr_worker.py   processo separado que roda o OCR de um arquivo
   ocr_plugin.py   plugin do OCRmyPDF: confiança por página e progresso

@@ -25,15 +25,24 @@ from pathlib import Path
 
 
 def _no_console_windows() -> None:
-    """No Windows, impede que cada chamada ao tesseract.exe abra uma janela preta."""
+    """
+    No Windows, impede que cada chamada ao tesseract.exe abra uma janela preta e abre o tesseract.exe
+    com prioridade abaixo do normal (o processo do OCR já está assim; isto deixa explícito).
+    """
     if os.name != "nt":
         return
     import subprocess
 
     original = subprocess.Popen.__init__
+    priority_flags = (subprocess.IDLE_PRIORITY_CLASS | subprocess.BELOW_NORMAL_PRIORITY_CLASS
+                      | subprocess.NORMAL_PRIORITY_CLASS | subprocess.ABOVE_NORMAL_PRIORITY_CLASS
+                      | subprocess.HIGH_PRIORITY_CLASS | subprocess.REALTIME_PRIORITY_CLASS)
 
     def patched(self, *args, **kwargs):
-        kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW
+        flags = kwargs.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW
+        if not flags & priority_flags:
+            flags |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        kwargs["creationflags"] = flags
         original(self, *args, **kwargs)
 
     subprocess.Popen.__init__ = patched
@@ -188,6 +197,8 @@ def _write_txt(path: Path, pages: list[str]) -> None:
 
 
 def main(job_file: str) -> int:
+    import machine
+    machine.lower_priority()      # o usuário continua usando o computador sem sentir o OCR
     _no_console_windows()
     job = json.loads(Path(job_file).read_text(encoding="utf-8"))
     emit = Emitter(job["status_file"])
