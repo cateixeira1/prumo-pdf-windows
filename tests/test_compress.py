@@ -269,3 +269,24 @@ def test_gui_compress_flows(tmp_path):
     finally:
         w.hub.shutdown()
         w.close()
+
+
+def test_gray_flate_scan_becomes_jpeg(tmp_path):
+    """Escaneado em cinza gravado sem perda (Flate): tem muitos tons, então vira JPEG e reduz bastante."""
+    import pypdfium2 as pdfium
+    from fpdf import FPDF
+
+    src = digital_pdf(tmp_path / "d.pdf", 1)
+    doc = pdfium.PdfDocument(str(src))
+    from PIL import Image
+    page = doc[0].render(scale=300 / 72).to_pil().convert("L")
+    noise = Image.effect_noise(page.size, 18).convert("L")            # grão do papel, como num escaneado
+    Image.blend(page, noise, 0.12).save(tmp_path / "g.png")
+    doc.close()
+    pdf = FPDF(format="A4")
+    pdf.add_page()
+    pdf.image(str(tmp_path / "g.png"), x=0, y=0, w=210, h=297)
+    pdf.output(str(tmp_path / "gray.pdf"))
+    r = compress.compress(tmp_path / "gray.pdf", tmp_path / "o.pdf", "medium")
+    assert r.images_changed == 1 and r.after < r.before * 0.6
+    assert [flt for _w, _h, flt, _ in _images(tmp_path / "o.pdf")] == ["/DCTDecode"]

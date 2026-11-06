@@ -203,10 +203,13 @@ def _color_mode(pdf_obj):
 
 
 def _few_colors(im) -> bool:
-    """Imagem com poucas cores (captura de tela, gráfico, texto): JPEG borraria as bordas."""
+    """
+    Imagem com poucas cores (captura de tela, gráfico, texto chapado): JPEG borraria as bordas. Até 64 cores
+    numa imagem colorida, até 16 tons numa em cinza (uma página escaneada em cinza tem muito mais tons).
+    """
     probe = im if im.width * im.height <= 250_000 else im.resize(
         (max(1, im.width // 4), max(1, im.height // 4)), resample=0)  # vizinho mais próximo: não cria cores
-    return probe.getcolors(maxcolors=256) is not None
+    return probe.getcolors(maxcolors=16 if im.mode == "L" else 64) is not None
 
 
 def _decode(obj, mode):
@@ -295,6 +298,11 @@ def _shrink_image(pdf, obj, display, level: Level, diag_pts: float) -> bool:
     else:
         data = _encode_jpeg(im, level.quality)
         new_filter = pikepdf.Name.DCTDecode
+        if filters[-1:] != ["/DCTDecode"]:
+            # origem sem perda: uma página limpa (texto renderizado) às vezes fica menor sem perda que em JPEG
+            flate = zlib.compress(im.tobytes(), 9)
+            if len(flate) <= len(data):
+                data, new_filter = flate, pikepdf.Name.FlateDecode
     if len(data) >= original * 0.95 and scale == 1.0:
         return False
     if len(data) >= original:
