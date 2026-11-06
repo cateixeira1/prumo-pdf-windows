@@ -259,7 +259,7 @@ class UiTests(unittest.TestCase):
 
     def test_version(self):
         import core
-        self.assertEqual(core.APP_VERSION, "1.13.0")
+        self.assertEqual(core.APP_VERSION, "1.14.0")
 
 
 if __name__ == "__main__":

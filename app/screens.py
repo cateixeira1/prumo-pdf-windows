@@ -6,9 +6,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QIntValidator, QPainter, QPen, QTransform
-from PySide6.QtWidgets import (QAbstractButton, QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout,
-                               QLineEdit, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QAbstractButton, QApplication, QButtonGroup, QCheckBox, QComboBox, QFrame,
+                               QHBoxLayout, QLineEdit, QPushButton, QRadioButton, QScrollArea, QSizePolicy,
+                               QSpinBox, QVBoxLayout, QWidget)
 
 import ocr_langs
 import pdfops
@@ -156,6 +156,8 @@ class Actions:
         if self.lib.needs_ocr_attention(item):
             menu_action(m, "Fazer OCR", "textscan", lambda: self.ocr(item))
         menu_action(m, "Organizar páginas", "grid", lambda: self.app.organize(item))
+        if not item.meta.locked:
+            menu_action(m, "Comprimir PDF…", "compress", lambda: compress_dialog(self.app, item))
         menu_action(m, "Remover dos favoritos" if item.meta.favorite else "Favoritar", "star",
                     lambda: self.toggle_favorite(item))
         m.addSeparator()
@@ -359,7 +361,7 @@ class HomeScreen(Screen):
         self.tiles = {}
 
         self.grid = FlowGrid(max_cols=3)   # 6 cartões: 2 ou 3 colunas fecham as linhas
-        self.tools = FlowGrid(max_cols=5)  # 10 cartões: 2 ou 5 colunas
+        self.tools = FlowGrid(max_cols=6, allowed=(2, 3, 4, 6))  # 12 cartões: linhas sempre completas
 
         def add(grid, key, title, icon, color, rounded=False, cb=None, subtitle=None):
             t = Tile(title, icon, color, subtitle=subtitle, rounded_icon=rounded)
@@ -389,6 +391,7 @@ class HomeScreen(Screen):
         add(t, "crop", "Cortar e girar", "crop", "indigo", True, lambda: self._tool("crop"))
         add(t, "number", "Numerar páginas", "numbers", "indigo", False, lambda: self._tool("number"))
         add(t, "sign", "Assinar digitalmente", "signature", "blue", True, lambda: self._tool("sign"))
+        add(t, "compress", "Comprimir PDF", "compress", "teal", True, lambda: self._tool("compress"))
 
         self.folders = WideTile("Pastas", "folder", "indigo")
         self.folders.clicked.connect(lambda: app.push(FoldersScreen(app)))
@@ -421,7 +424,8 @@ class HomeScreen(Screen):
                    "organize": "Organizar qual PDF?", "insert": "Incluir páginas em qual PDF?",
                    "remove": "Remover páginas de qual PDF?", "extract": "Extrair páginas de qual PDF?",
                    "split": "Dividir qual PDF?", "crop": "Cortar ou girar páginas de qual PDF?",
-                   "number": "Numerar as páginas de qual PDF?", "sign": "Assinar qual PDF?"}
+                   "number": "Numerar as páginas de qual PDF?", "sign": "Assinar qual PDF?",
+                   "compress": "Comprimir qual PDF?"}
 
     def _tool(self, key):
         run_tool(self.app, key, self.TOOL_TITLES[key])
@@ -507,6 +511,8 @@ def run_tool(app, key, title):
     elif key == "sign":
         import sign_ui
         sign_ui.sign_dialog(app, item)
+    elif key == "compress":
+        compress_dialog(app, item)
 
 
 # --- Listas e pastas ------------------------------------------------------------
@@ -1010,6 +1016,8 @@ class DocumentScreen(Screen):
         tile("Duplicar", "duplicate", "gray", lambda: self._duplicate(item), rounded=True)
         tile("Proteger com senha", "lock", "purple", edit(lambda: protect_dialog(app, item)),
              subtitle="Criptografia padrão de PDF", rounded=True, dimmed=signed)
+        tile("Comprimir PDF", "compress", "teal", lambda: compress_dialog(app, lib.item(item.id) or item),
+             subtitle=trf("Média ou alta · {}", size_text(item.size)), rounded=True, dimmed=signed)
         self.content.addWidget(g)
         if lib.can_undo(item):
             u = WideTile("Desfazer última alteração", "undo", "gray",
@@ -1586,6 +1594,120 @@ def unprotect_dialog(app, item):
         return
     app.toast(trf("Cópia sem senha: {}", new.name), "Abrir", lambda: app.open_document(new.id))
 
+
+
+# --- Comprimir ---------------------------------------------------------------------
+
+COMPRESS_SIGNED_MSG = ("Este PDF está assinado digitalmente: comprimir regrava o arquivo e a assinatura deixaria de "
+                       "valer. Comprima o original (sem assinatura) e assine depois.")
+COMPRESS_LEVELS = [
+    ("medium", "Compressão média",
+     "Preserva melhor a qualidade. O arquivo fica menor, mas reduz menos."),
+    ("high", "Compressão alta",
+     "Reduz bastante o tamanho do arquivo, sacrificando a qualidade das imagens."),
+]
+COMPRESS_NOTES = {
+    "medium": ("Imagens com mais de 150 dpi são reduzidas para 150 dpi. Fica bom para ler na tela e para "
+               "imprimir. Texto, destaques e o texto do OCR não mudam.", "secondary"),
+    "high": ("Atenção: fotos e páginas escaneadas perdem nitidez (imagens reduzidas para 96 dpi). Letras pequenas "
+             "podem ficar borradas ao ampliar ou imprimir. Use para enviar por e-mail ou anexar onde há limite de "
+             "tamanho. Texto, destaques e o texto do OCR não mudam.", "orange"),
+}
+
+
+def compress_dialog(app, item):
+    """Cria uma cópia menor do PDF ("Nome - comprimido"), em compressão média ou alta. O original não muda."""
+    import compress
+
+    if item is None:
+        return
+    if item.meta.locked:
+        app.toast("Este PDF tem senha. Para comprimir, crie antes uma cópia sem senha.")
+        return
+    if getattr(item.meta, "signed", 0):
+        app.toast(COMPRESS_SIGNED_MSG)
+        return
+    ov = SheetOverlay(app, 470)
+    sheet_header(ov, "Comprimir PDF", scroll=True)
+    card = TileCard()
+    card.lay.setSpacing(8)
+    card.lay.addWidget(Label(f"“{raw(item.name)}”", 15, 600))
+    card.lay.addWidget(Label(trf("Tamanho atual: {}", size_text(item.size)), 13, 400, "secondary"))
+    group = QButtonGroup(ov)
+    radios = {}
+    saved = app.setting("compress_level", "medium")
+    for key, title, desc in COMPRESS_LEVELS:
+        r = QRadioButton(title)
+        r.setFont(font(15, 600))
+        r.setCursor(Qt.PointingHandCursor)
+        group.addButton(r)
+        radios[key] = r
+        card.lay.addSpacing(4)
+        card.lay.addWidget(r)
+        d = Label(desc, 13, 400, "secondary")
+        d.setContentsMargins(26, 0, 0, 0)
+        card.lay.addWidget(d)
+    radios.get(saved, radios["medium"]).setChecked(True)
+    note = Label("", 13, 500, "secondary")
+    card.lay.addSpacing(4)
+    card.lay.addWidget(note)
+    card.lay.addWidget(Label("O original não muda: o Prumo cria uma cópia comprimida na mesma pasta.",
+                             13, 400, "secondary"))
+
+    def chosen():
+        return next(k for k, r in radios.items() if r.isChecked())
+
+    def show_note():
+        text, role = COMPRESS_NOTES[chosen()]
+        note.setText(text)
+        note.role = role
+        note._apply()
+    for r in radios.values():
+        r.toggled.connect(lambda _on: show_note())
+    show_note()
+    wrap = QVBoxLayout()
+    wrap.setContentsMargins(16, 4, 16, 16)
+    wrap.setSpacing(12)
+    wrap.addWidget(card)
+    btn = PrimaryButton("Comprimir", "teal")
+    wrap.addWidget(btn)
+    ov.lay.addLayout(wrap)
+    btn.clicked.connect(lambda: ov.done(True))
+    if not ov.run():
+        return
+    level = chosen()
+    app.set_setting("compress_level", level)
+    lib = app.lib
+    tmp = lib.temp_path()
+    step = tr("Reduzindo as imagens")
+    try:
+        result = app.run_with_progress(
+            "Comprimindo…", lambda progress: compress.compress(item.path, tmp, level,
+                                                               progress=lambda i, n: progress(i, n, step)))
+    except compress.CompressError as exc:
+        tmp.unlink(missing_ok=True)
+        app.show_error(tr(str(exc)))
+        return
+    except Exception as exc:  # noqa: BLE001
+        tmp.unlink(missing_ok=True)
+        app.show_error(trf("Não foi possível comprimir: {}", exc))
+        return
+    if result.after >= result.before * 0.98:
+        tmp.unlink(missing_ok=True)
+        alert(app, "O PDF já está compacto",
+              "Não foi possível reduzir o tamanho deste PDF. Ele provavelmente já tem imagens em resolução baixa "
+              "ou quase só texto. Nenhuma cópia foi criada.")
+        return
+    try:
+        base = i18n.strip_suffix(item.name, "{} - comprimido")
+        new = lib.adopt(tmp, trf("{} - comprimido", base), item.folder)
+    except Exception as exc:  # noqa: BLE001
+        tmp.unlink(missing_ok=True)
+        app.show_error(trf("Não foi possível comprimir: {}", exc))
+        return
+    pct = round(result.saved_ratio * 100)
+    app.toast(trf("PDF comprimido: {} → {} ({}% menor)", size_text(result.before), size_text(result.after), pct),
+              "Abrir", lambda: app.open_document(new.id))
 
 # --- Escolher páginas (remover, extrair) --------------------------------------
 

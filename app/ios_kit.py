@@ -610,9 +610,10 @@ class EmptyState(QWidget):
 class FlowGrid(QWidget):
     """Grade de cartões: 2 colunas numa janela estreita (como no iPhone), mais colunas numa janela larga."""
 
-    def __init__(self, min_col: int = 200, max_cols: int = 6, parent=None):
+    def __init__(self, min_col: int = 200, max_cols: int = 6, parent=None, allowed: tuple[int, ...] | None = None):
         super().__init__(parent)
         self.min_col, self.max_cols = min_col, max_cols
+        self.allowed = allowed   # colunas aceitas (para fechar as linhas); usa a maior que couber
         self.items: list[QWidget] = []
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
@@ -631,6 +632,8 @@ class FlowGrid(QWidget):
 
     def columns(self, width: int) -> int:
         cols = max(2, min(self.max_cols, (width + SPACING) // (self.min_col + SPACING)))
+        if self.allowed:
+            return max([c for c in self.allowed if c <= cols] or [min(self.allowed)])
         if self.max_cols == 4 and cols == 3:
             cols = 2   # a tela inicial fica com linhas completas
         if self.max_cols == 5 and cols in (3, 4):

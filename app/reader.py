@@ -964,6 +964,8 @@ class ToolPanel(QScrollArea):
         self._button("merge", "Combinar com outros PDFs", "stack", s.tool_merge, "purple")
         self._button("dewarp", "Corrigir páginas curvas", "curve", s.tool_dewarp, "teal")
         self._button("protect", "Proteger com senha", "lock", s.tool_protect, "purple")
+        self._button("compress", "Comprimir PDF", "compress", s.tool_compress, "teal",
+                     "Cria uma cópia menor: compressão média ou alta")
         self._button("duplicate", "Duplicar", "duplicate", s.tool_duplicate, "gray")
 
         self._title("Arquivo")
@@ -1007,6 +1009,7 @@ class ToolPanel(QScrollArea):
             self.buttons[k].setEnabled(editable)
         for k in ("extract", "split", "merge", "duplicate"):
             self.buttons[k].setEnabled(not locked)
+        self.buttons["compress"].setEnabled(not locked and not signed)
         self.buttons["protect"].setEnabled(not signed)
         self.buttons["sign"].setEnabled(not locked)
         self.buttons["ocr"].setEnabled(editable and lib.needs_ocr_attention(item))
@@ -1703,6 +1706,10 @@ class _ReaderBase(Screen):
             screens.unprotect_dialog(self.app, item)
         else:
             screens.protect_dialog(self.app, item)
+
+    def tool_compress(self):
+        import screens
+        screens.compress_dialog(self.app, self._current_item())
 
     def tool_duplicate(self):
         self.app.actions.duplicate(self._current_item())

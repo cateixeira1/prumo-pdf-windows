@@ -286,7 +286,7 @@ class ScreensInEveryLanguage(unittest.TestCase):
             # ferramentas da tela inicial (cada uma abre o seletor de PDF)
             for key, title in (("read", "Ler qual PDF?"), ("ocr", "Fazer OCR de quais PDFs?"),
                                ("organize", "Organizar qual PDF?"), ("split", "Dividir qual PDF?"),
-                               ("sign", "Assinar qual PDF?")):
+                               ("sign", "Assinar qual PDF?"), ("compress", "Comprimir qual PDF?")):
                 col.where = f"{lang}: ferramenta {key}"
                 screens.run_tool(w, key, title)
             # folhas e alertas das ferramentas
@@ -294,6 +294,7 @@ class ScreensInEveryLanguage(unittest.TestCase):
                              ("incluir", lambda: screens.include_pages_dialog(w, alpha, source=alpha)),
                              ("curvas", lambda: screens.dewarp_dialog(w, alpha)),
                              ("proteger", lambda: screens.protect_dialog(w, alpha)),
+                             ("comprimir", lambda: screens.compress_dialog(w, alpha)),
                              ("senha do app", lambda: screens.set_app_password(w)),
                              ("cortar", lambda: page_tools.crop_dialog(w, alpha)),
                              ("numerar", lambda: page_tools.number_dialog(w, alpha)),
