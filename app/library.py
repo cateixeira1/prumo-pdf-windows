@@ -25,6 +25,7 @@ import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+from i18n import raw, tr, trf
 from pdfops import UserError
 
 META_DIR = ".prumo"
@@ -97,7 +98,7 @@ class PDFItem:
 
     @property
     def name(self) -> str:
-        return Path(self.rel).stem
+        return raw(Path(self.rel).stem)          # nome do usuário: não passa pela tradução
 
     @property
     def folder(self) -> str:
@@ -105,7 +106,7 @@ class PDFItem:
 
     @property
     def folder_name(self) -> str:
-        return self.folder.rsplit("/", 1)[-1] if self.folder else "Sem pasta"
+        return raw(self.folder.rsplit("/", 1)[-1]) if self.folder else "Sem pasta"
 
     @property
     def version(self) -> str:
@@ -130,7 +131,7 @@ class FolderItem:
 
     @property
     def name(self) -> str:
-        return self.path.rsplit("/", 1)[-1]
+        return raw(self.path.rsplit("/", 1)[-1])
 
     @property
     def parent(self) -> str:
@@ -168,7 +169,7 @@ def sanitize(name: str) -> str:
     s = s.strip(" .")
     if s.upper() in _RESERVED:
         s += "_"
-    return (s or "Documento")[:150]
+    return (s or tr("Documento"))[:150]
 
 
 def signature(size: int, modified: float) -> str:
@@ -610,7 +611,7 @@ class Library:
         path = f"{parent}/{clean}" if parent else clean
         full = self.folder_path(path)
         if full.exists():
-            raise UserError(f"Já existe uma pasta chamada “{clean}”.")
+            raise UserError(trf("Já existe uma pasta chamada “{}”.", clean))
         full.mkdir(parents=True)
         self.reload()
         return path
@@ -622,7 +623,7 @@ class Library:
         if new_path == path:
             return path
         if self.folder_path(new_path).exists() and new_path.lower() != path.lower():
-            raise UserError(f"Já existe uma pasta chamada “{clean}”.")
+            raise UserError(trf("Já existe uma pasta chamada “{}”.", clean))
         os.rename(self.folder_path(path), self.folder_path(new_path))
         prefix = path + "/"
         for m in self._metas.values():
@@ -645,7 +646,7 @@ class Library:
         if dest == item.path:
             return
         if dest.exists() and str(dest).lower() != str(item.path).lower():
-            raise UserError(f"Já existe um PDF chamado “{clean}” nesta pasta.")
+            raise UserError(trf("Já existe um PDF chamado “{}” nesta pasta.", clean))
         os.rename(item.path, dest)
         item.meta.path = self.rel_of(dest)
         self.save_meta()
@@ -667,7 +668,7 @@ class Library:
         self.reload()
 
     def duplicate(self, item: PDFItem) -> PDFItem | None:
-        dest = self.unique_path(item.folder, f"{item.name} (cópia)")
+        dest = self.unique_path(item.folder, trf("{} (cópia)", item.name))
         shutil.copy2(item.path, dest)
         return self.register(dest)
 
@@ -797,8 +798,8 @@ def _remove_to_trash(path: Path) -> None:
             _recycle_windows(path)
         except Exception:
             # Nunca apaga de vez sem avisar: a tela promete que dá para recuperar na Lixeira.
-            raise UserError(f"Não foi possível mandar “{path.name}” para a Lixeira do Windows. "
-                            "Feche o arquivo em outros programas e tente de novo.") from None
+            raise UserError(trf("Não foi possível mandar “{}” para a Lixeira do Windows. "
+                                "Feche o arquivo em outros programas e tente de novo.", path.name)) from None
         return
     if path.is_dir():
         shutil.rmtree(path)

@@ -1,0 +1,76 @@
+# Textos que o extrator (tools/i18n_strings.py) acha, mas que não são da interface ou não se traduzem.
+# Um por linha, exatamente como aparece no código.
+# Marcas e nomes próprios
+Prumo PDF
+Prumo PDF {}
+Color Software
+Dropbox
+Google Drive
+iCloud Drive
+Microsoft OneDrive
+Meu Drive
+My Drive
+Windows
+# Idiomas (cada um aparece com o próprio nome)
+Português
+English
+Español
+Français
+Deutsch
+Norsk
+Svenska
+Dansk
+Suomi
+# Fontes do modo leitor
+Cambria
+DejaVu Sans
+DejaVu Serif
+Georgia
+Noto Sans
+Noto Serif
+Segoe UI
+Times New Roman
+# Teclas e atalhos
+Ctrl+=
+Delete
+End
+Esc
+Home
+Space
+# Identificadores, nomes de arquivo e trechos de PDF
+- assinado
+- resumo
+/GS0 gs {} {} {} rg
+{} {} {} {} re f
+obj:{}:{}
+prumo-hl-{}
+pbkdf2_sha256${}${}${}
+file:{}
+win:{}
+img{}.{}
+{}.json
+{}.pdf
+{}.pfx
+{}.traineddata
+{}.txt
+{}/{}.pdf
+{} ({}).pdf
+Assinatura{}
+DocMeta | None
+Certificados
+Falha ao mandar para a Lixeira
+em 30/12/2026 23:59:59
+Página 1
+Página 1 de 12
+app
+c
+name
+when
+remove
+rot
+file
+# Filtros de arquivo: cada nome de tipo é traduzido à parte (ver EXTRA em tools/i18n_strings.py)
+PDF e arquivos para converter ({});;PDF (*.pdf);;Imagens ({});;Word, Excel e PowerPoint ({});;Texto e HTML ({})
+Certificado A1 (*.pfx *.p12);;Todos os arquivos (*)
+PDF (*.pdf)
+ZIP (*.zip)

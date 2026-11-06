@@ -354,7 +354,7 @@ class JobCenter(QObject):
         cfg = {
             "input": str(item.path),
             "output": str(self._output),
-            "language": self.settings_get("ocr_language", "por"),
+            "language": self.settings_get("ocr_language", "") or __import__("ocr_langs").default(),
             "max_precision": bool(self.settings_get("max_precision", False)),
             "jobs": machine.ocr_jobs(bool(self.settings_get("max_precision", False))),
             "deskew": True,
@@ -417,7 +417,7 @@ class JobCenter(QObject):
                 lib.update_after_ocr(original, result, review, (sum(confs) / len(confs) / 100) if confs else None)
                 self.finished.emit(job.item_id, "ok", {"result_id": result.id, "review": review})
             except Exception as exc:
-                self.finished.emit(job.item_id, "error", f"Não foi possível salvar o resultado: {exc}")
+                self.finished.emit(job.item_id, "error", __import__("i18n").trf("Não foi possível salvar o resultado: {}", exc))
         if self._output is not None:
             self._output.unlink(missing_ok=True)
         self.progress.emit()

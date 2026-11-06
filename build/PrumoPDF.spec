@@ -51,7 +51,7 @@ a = Analysis(
 # 2) PIL/_avif: leitor de AVIF do Pillow (8 MB). O Prumo não aceita .avif (ver IMAGE_EXT em convert.py);
 #    HEIC/HEIF continuam pelo pillow-heif.
 # 3) Traduções do próprio Qt (7 MB, 30+ idiomas): ficam só as dos idiomas do Prumo (botões padrão de diálogos).
-_QT_LANGS = ("pt", "en", "es", "fr", "de", "ja", "zh", "nb", "sv", "da", "fi")
+_QT_LANGS = ("pt", "en", "es", "fr", "de", "ja", "zh", "nb", "nn", "sv", "da", "fi")   # nn: o Qt não traz bokmål
 
 
 def _drop_binary(entry):

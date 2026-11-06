@@ -61,6 +61,18 @@ STAMP_W, STAMP_H = 230, 62
 STAMP_PAD_X, STAMP_PAD_Y = 6, 4          # margem interna do carimbo (pontos)
 STAMP_TITLE = "Assinado digitalmente por"
 STAMP_SAMPLE_DATE = "em 30/12/2026 23:59:59"
+# Data do carimbo em cada idioma (strftime, que é o que o pyHanko usa)
+_STAMP_DATE = {"pt": "%d/%m/%Y %H:%M:%S", "es": "%d/%m/%Y %H:%M:%S", "fr": "%d/%m/%Y %H:%M:%S",
+               "en": "%Y-%m-%d %H:%M:%S", "de": "%d.%m.%Y %H:%M:%S", "nb": "%d.%m.%Y %H:%M:%S",
+               "da": "%d.%m.%Y %H:%M:%S", "fi": "%d.%m.%Y %H:%M:%S", "sv": "%Y-%m-%d %H:%M:%S"}
+
+
+def _stamp_texts() -> tuple[str, str, str]:
+    """(título, modelo da data com {}, formato strftime) no idioma dos textos gravados no PDF."""
+    import i18n
+    lang = i18n.doc_language()
+    return (i18n.tr_in(lang, STAMP_TITLE), i18n.tr_in(lang, "em {}"),
+            _STAMP_DATE.get(lang, "%Y-%m-%d %H:%M:%S"))
 
 
 # --- certificados ----------------------------------------------------------------------
@@ -86,8 +98,9 @@ class CertInfo:
 
     @property
     def label(self) -> str:
-        tipo = "A1 salvo no Prumo" if self.kind == "file" else "Windows (A1 instalado ou A3)"
-        return f"{self.name} · {tipo} · válido até {self.not_after.astimezone().strftime('%d/%m/%Y')}"
+        import i18n
+        tipo = i18n.tr("A1 salvo no Prumo" if self.kind == "file" else "Windows (A1 instalado ou A3)")
+        return i18n.raw(f"{self.name} · {tipo} · " + i18n.trf("válido até {}", i18n.fmt_date(self.not_after)))
 
 
 def cert_dir() -> Path:
@@ -466,10 +479,13 @@ def stamp_layout(name: str) -> tuple[int, int, list[str]]:
     O pyHanko só aceita medidas inteiras aqui, por isso os corpos 8, 7 e 6.
     """
     name = (name or "").strip().encode("cp1252", errors="replace").decode("cp1252")
+    title, when, fmt = _stamp_texts()
+    import time as _t
+    sample = when.replace("{}", _t.strftime(fmt, (2026, 12, 30, 23, 59, 59, 0, 364, 0)))
     inner_w = STAMP_W - 2 * STAMP_PAD_X
     inner_h = STAMP_H - 2 * STAMP_PAD_Y
     for size, lead in ((8, 10), (7, 9), (6, 8)):
-        lines = [STAMP_TITLE] + _wrap_words(name, size, inner_w) + [STAMP_SAMPLE_DATE]
+        lines = [title] + _wrap_words(name, size, inner_w) + [sample]
         if len(lines) * lead <= inner_h and all(_text_width(x, size) <= inner_w for x in lines):
             return size, lead, lines
     size, lead = 6, 8
@@ -478,7 +494,7 @@ def stamp_layout(name: str) -> tuple[int, int, list[str]]:
     if len(body) > room:
         body = body[:room]
         body[-1] = _shorten(body[-1] + " ...", size, inner_w)
-    return size, lead, [STAMP_TITLE] + [_shorten(x, size, inner_w) for x in body] + [STAMP_SAMPLE_DATE]
+    return size, lead, [title] + [_shorten(x, size, inner_w) for x in body] + [sample]
 
 
 def _stamp_box(path, page_choice: str, position: str, index: int) -> tuple[int, tuple[int, int, int, int]]:
@@ -560,10 +576,11 @@ def sign_file(src, dest, signer, name: str, options: SignOptions) -> None:
     if options.stamp:
         from pyhanko.pdf_utils.layout import AxisAlignment, InnerScaling, Margins, SimpleBoxLayoutRule
         size, lead, lines = stamp_layout(name)
-        text = "\n".join([x.replace("%", "%%") for x in lines[:-1]] + ["em %(ts)s"])
+        _title, when, fmt = _stamp_texts()
+        text = "\n".join([x.replace("%", "%%") for x in lines[:-1]] + [when.replace("%", "%%").replace("{}", "%(ts)s")])
         style = TextStampStyle(
             stamp_text=text,
-            timestamp_format="%d/%m/%Y %H:%M:%S",
+            timestamp_format=fmt,
             border_width=1,
             text_box_style=TextBoxStyle(font=SimpleFontEngineFactory("Helvetica", 0.6), font_size=size, leading=lead),
             inner_content_layout=SimpleBoxLayoutRule(
@@ -582,7 +599,8 @@ def sign_file(src, dest, signer, name: str, options: SignOptions) -> None:
 
 
 def signed_name(item) -> str:
-    return f"{item.name}{SUFFIX}"
+    import i18n
+    return i18n.trf("{} - assinado", item.name)
 
 
 def sign_item(lib, item, signer, name: str, options: SignOptions):
@@ -625,7 +643,7 @@ def describe_signatures(path) -> list[dict]:
                 m = re.match(r"^(.*?):(\d{11}|\d{14})$", str(cn))
                 when = s.self_reported_timestamp
                 out.append({"name": m.group(1) if m else str(cn),
-                            "when": when.astimezone().strftime("%d/%m/%Y %H:%M") if when else "",
+                            "when": __import__("i18n").fmt_datetime(when) if when else "",
                             "field": s.field_name})
     except Exception:  # noqa: BLE001
         return []

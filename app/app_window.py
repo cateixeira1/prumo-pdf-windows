@@ -11,6 +11,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShor
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QStackedWidget
 
 import core
+from i18n import tr, trf, trn
 from ios_kit import JobBanner, Toast, alert
 from ios_theme import T, app_icon
 from library import Library, default_root
@@ -241,7 +242,7 @@ class MainWindow(QMainWindow):
                             "(feche o leitor de PDF e tente de novo).")
         except OSError as exc:
             self._restore_cursor(busy)
-            self.show_error(f"Erro ao acessar o arquivo: {exc.strerror or exc}")
+            self.show_error(trf("Erro ao acessar o arquivo: {}", exc.strerror or exc))
         except Exception as exc:  # noqa: BLE001 - mostra qualquer erro em vez de fechar o app
             self._restore_cursor(busy)
             self.show_error(f"{type(exc).__name__}: {exc}")
@@ -255,7 +256,7 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
 
     def coming_soon(self, what: str):
-        self.toast(f"“{what}” chega na próxima etapa da versão para Windows.")
+        self.toast(trf("“{}” chega na próxima etapa da versão para Windows.", tr(what)))
 
     # --- arquivos ---
     def reveal(self, path):
@@ -298,7 +299,7 @@ class MainWindow(QMainWindow):
         import pdfops
         msg = "Este PDF está protegido. Digite a senha para abrir."
         while True:
-            idx, pw = alert(self, title or f"“{item.name}” tem senha", msg,
+            idx, pw = alert(self, title or trf("“{}” tem senha", item.name), msg,
                             [("Cancelar", "cancel"), ("Abrir", "default")], text="", placeholder="Senha",
                             secret=True)
             if idx != 1:
@@ -391,7 +392,7 @@ class MainWindow(QMainWindow):
         t.start()
         while not state["done"]:
             i, total, name = state["p"]
-            ov.set_progress(i, total, f"{i + 1} de {total}: {name}" if total > 1 else name)
+            ov.set_progress(i, total, trf("{} de {}: {}", i + 1, total, name) if total > 1 else name)
             loop = QEventLoop()
             QTimer.singleShot(60, loop.quit)
             loop.exec()
@@ -413,7 +414,7 @@ class MainWindow(QMainWindow):
         images = [p for p in paths if convert.kind(p) == "image"]
         combine, name = False, None
         if len(images) > 1:
-            idx = alert(self, f"{len(images)} imagens",
+            idx = alert(self, trf("{} imagens", len(images)),
                         "Juntar todas num PDF só (uma imagem por página, na ordem escolhida) ou criar um PDF "
                         "para cada imagem?",
                         [("Um PDF só", "default"), ("Um PDF para cada", "default"), ("Cancelar", "cancel")])
@@ -421,7 +422,7 @@ class MainWindow(QMainWindow):
                 return []
             combine = idx == 0
             if combine:
-                default = _time.strftime("Imagens %d-%m-%Y %Hh%M")
+                default = trf("Imagens {}", _time.strftime("%Y-%m-%d %Hh%M"))
                 ans, text = alert(self, "Nome do PDF", "", [("Cancelar", "cancel"), ("Criar", "default")],
                                   text=default, placeholder="Nome")
                 if ans != 1:
@@ -447,14 +448,14 @@ class MainWindow(QMainWindow):
                 image_items.append(it)
         if res.failed:
             lines = "\n".join(f"• {n}: {m}" for n, m in res.failed[:6])
-            more = f"\n… e mais {len(res.failed) - 6}." if len(res.failed) > 6 else ""
+            more = "\n" + trf("… e mais {}.", len(res.failed) - 6) if len(res.failed) > 6 else ""
             alert(self, "Alguns arquivos não foram convertidos" if items else "Não foi possível converter",
                   lines + more, [("OK", "default")])
         if not items:
             return []
-        msg = (f"PDF criado: {items[0].name}" if len(items) == 1 else f"{len(items)} PDFs criados")
+        msg = (trf("PDF criado: {}", items[0].name) if len(items) == 1 else trf("{} PDFs criados", len(items)))
         if res.simplified:
-            msg += ". Sem o Word instalado, a conversão foi simplificada: o layout pode mudar."
+            msg += ". " + tr("Sem o Word instalado, a conversão foi simplificada: o layout pode mudar.")
         if offer_ocr and image_items:
             idx = alert(self, "Usar OCR agora?",
                         "Fotos e imagens viram páginas sem texto selecionável. O OCR cria um novo PDF com o texto "
@@ -496,7 +497,7 @@ class MainWindow(QMainWindow):
                     shutil.copy2(it.path, target)
             if self.attempt(run):
                 self.set_setting("export_dir", folder)
-                self.toast(f"{len(items)} cópias exportadas.", "Mostrar", lambda: self.reveal(folder))
+                self.toast(trf("{} cópias exportadas.", len(items)), "Mostrar", lambda: self.reveal(folder))
 
     def import_dialog(self, folder: str = ""):
         import convert
@@ -533,9 +534,9 @@ class MainWindow(QMainWindow):
         if self.attempt(lambda: res.setdefault("items", self.lib.import_files(pdfs, folder)), busy="Importando…"):
             items = res["items"]
             if len(items) == 1:
-                self.toast(f"PDF importado: {items[0].name}", "Abrir", lambda: self.open_document(items[0].id))
+                self.toast(trf("PDF importado: {}", items[0].name), "Abrir", lambda: self.open_document(items[0].id))
             elif items:
-                self.toast(f"{len(items)} PDFs importados.")
+                self.toast(trf("{} PDFs importados.", len(items)))
 
     def _drop_folder(self) -> str:
         f = getattr(self.current(), "drop_folder", None)
@@ -573,10 +574,10 @@ class MainWindow(QMainWindow):
         joining = new_root.is_dir() and any(p for p in new_root.rglob("*.pdf") if backup.META_DIR not in p.parts)
         if joining:
             idx = alert(self, "Juntar com a biblioteca da nuvem",
-                        f"{new_root}\n\nEssa pasta já tem PDFs (por exemplo, do Prumo no iPhone ou em outro "
+                        f"{new_root}\n\n" + tr("Essa pasta já tem PDFs (por exemplo, do Prumo no iPhone ou em outro "
                         "computador). Juntar: os PDFs deste computador vão para lá, nas mesmas pastas, sem duplicar "
                         "os iguais, e a pasta antiga fica vazia. Se escolher “Não juntar”, os PDFs deste "
-                        "computador continuam na pasta antiga.",
+                        "computador continuam na pasta antiga."),
                         [("Juntar", "default"), ("Não juntar", "cancel"), ("Cancelar", "cancel")])
             if idx is None or idx == 2:
                 return
@@ -590,19 +591,22 @@ class MainWindow(QMainWindow):
                     self.show_error(str(exc))
                     return
                 except OSError as exc:
-                    self.show_error(f"Não foi possível juntar: {exc.strerror or exc}. Os arquivos que faltaram "
-                                    f"continuam em {old}.")
+                    self.show_error(trf("Não foi possível juntar: {}. Os arquivos que faltaram continuam em {}.",
+                                        exc.strerror or exc, old))
                     return
                 self.lib.reload()
                 cloud = backup.cloud_of(new_root)
-                self.toast(f"Pronto: {added} PDF{'s' if added != 1 else ''} juntado{'s' if added != 1 else ''}"
-                           + (f" ({same} já estava{'m' if same != 1 else ''} lá)" if same else "")
-                           + (f". A biblioteca agora está no {cloud}." if cloud else "."))
+                msg = trn(added, "Pronto: 1 PDF juntado.", "Pronto: {} PDFs juntados.")
+                if same:
+                    msg += " " + trn(same, "1 já estava lá.", "{} já estavam lá.")
+                if cloud:
+                    msg += " " + trf("A biblioteca agora está no {}.", cloud)
+                self.toast(msg)
                 return
         else:
             idx = alert(self, "Mudar a pasta da biblioteca",
-                        f"Nova pasta: {new_root}\n\nMover os PDFs atuais para lá? Se escolher “Não mover”, "
-                        "os PDFs continuam na pasta antiga e a biblioteca passa a mostrar a nova.",
+                        trf("Nova pasta: {}", new_root) + "\n\n" + tr("Mover os PDFs atuais para lá? Se escolher "
+                        "“Não mover”, os PDFs continuam na pasta antiga e a biblioteca passa a mostrar a nova."),
                         [("Mover os PDFs", "default"), ("Não mover", "cancel"), ("Cancelar", "cancel")])
             if idx is None or idx == 2:
                 return
@@ -615,7 +619,7 @@ class MainWindow(QMainWindow):
                     if target.exists():
                         if entry.is_dir() and entry.name == ".prumo":
                             continue
-                        raise UserError(f"Já existe “{entry.name}” na nova pasta. Nada foi movido depois dele.")
+                        raise UserError(trf("Já existe “{}” na nova pasta. Nada foi movido depois dele.", entry.name))
                     shutil.move(str(entry), str(target))
         try:
             self.run_with_progress("Movendo os PDFs…", lambda _p: run())
@@ -623,14 +627,14 @@ class MainWindow(QMainWindow):
             self.show_error(str(exc))
             return
         except OSError as exc:
-            self.show_error(f"Não foi possível mover: {exc.strerror or exc}. O arquivo pode estar aberto em outro "
-                            "programa.")
+            self.show_error(trf("Não foi possível mover: {}. O arquivo pode estar aberto em outro programa.",
+                                exc.strerror or exc))
             return
         self.set_setting("library_root", str(new_root))
         self._swap_library(str(new_root))
         import backup
         cloud = backup.cloud_of(new_root)
-        self.toast(f"Pronto: a biblioteca agora está no {cloud}, com backup na nuvem." if cloud
+        self.toast(trf("Pronto: a biblioteca agora está no {}, com backup na nuvem.", cloud) if cloud
                    else "Pasta da biblioteca alterada.")
 
     # --- cópia de segurança ---
@@ -647,11 +651,11 @@ class MainWindow(QMainWindow):
             self.show_error(str(exc))
             return
         except OSError as exc:
-            self.show_error(f"Não foi possível copiar: {exc.strerror or exc}")
+            self.show_error(trf("Não foi possível copiar: {}", exc.strerror or exc))
             return
         self.set_setting("backup_dir", dest)
         self.set_setting("last_backup", __import__("time").time())
-        self.toast(f"Cópia feita: {n} PDF{'s' if n != 1 else ''} em “{target.name}”.", "Mostrar",
+        self.toast(trn(n, "Cópia feita: 1 PDF em “{}”.", "Cópia feita: {} PDFs em “{}”.", target.name), "Mostrar",
                    lambda: self.reveal(target))
         self.current().refresh()
 
@@ -673,12 +677,12 @@ class MainWindow(QMainWindow):
         try:
             res = self.run_with_progress("Restaurando…", lambda _p: backup.restore(Path(src), self.lib))
         except Exception as exc:  # noqa: BLE001
-            self.show_error(f"Não foi possível restaurar: {exc}")
+            self.show_error(trf("Não foi possível restaurar: {}", exc))
             return
-        parts = [f"{res.added} PDF{'s' if res.added != 1 else ''} restaurado{'s' if res.added != 1 else ''}"]
+        msg = trn(res.added, "1 PDF restaurado.", "{} PDFs restaurados.")
         if res.skipped:
-            parts.append(f"{res.skipped} já estava{'m' if res.skipped != 1 else ''} na biblioteca")
-        self.toast(", ".join(parts) + ".")
+            msg += " " + trn(res.skipped, "1 já estava na biblioteca.", "{} já estavam na biblioteca.")
+        self.toast(msg)
 
     # --- arquivos vindos do Explorador ("Abrir com", botão direito) ---
     def handle_external(self, open_paths=(), convert_paths=()):
@@ -715,7 +719,7 @@ class MainWindow(QMainWindow):
         if opened is not None and len(pdfs) == 1:
             self.read(opened)
         elif len(pdfs) > 1:
-            self.toast(f"{len(pdfs)} PDFs abertos na biblioteca (Sem pasta).")
+            self.toast(trf("{} PDFs abertos na biblioteca (Sem pasta).", len(pdfs)))
     def _swap_library(self, root: str):
         from screens import HomeScreen, SettingsScreen
         self.hub.shutdown()
@@ -734,7 +738,7 @@ class MainWindow(QMainWindow):
     def start_ocr(self, item, quiet=False, allow_signed=False):
         if self.jobs.start(item, allow_signed):
             if not quiet and self.jobs.is_busy() and self.jobs.current and self.jobs.current.item_id != item.id:
-                self.toast(f"“{item.name}” entrou na fila do OCR.")
+                self.toast(trf("“{}” entrou na fila do OCR.", item.name))
         elif not quiet:
             self.toast("O OCR deste PDF já está em andamento.")
         self.current().refresh()
@@ -777,13 +781,13 @@ class MainWindow(QMainWindow):
         if status == "ok":
             result = self.lib.item(data["result_id"])
             review = data.get("review") or []
-            msg = f"OCR concluído: {result.name if result else name}"
+            msg = trf("OCR concluído: {}", result.name if result else name)
             if review:
                 from pdfops import format_ranges
-                msg += f". Revise as páginas {format_ranges(review)}."
+                msg += ". " + trf("Revise as páginas {}.", format_ranges(review))
             self.toast(msg, "Abrir", (lambda: self.open_document(result.id)) if result else None)
         elif status == "nothing":
-            self.toast(f"“{name}”: todas as páginas já têm texto. O OCR não foi necessário.")
+            self.toast(trf("“{}”: todas as páginas já têm texto. O OCR não foi necessário.", name))
         elif status == "signed" and item is not None:
             idx = alert(self, "PDF com assinatura digital",
                         "Fazer OCR cria uma cópia sem a assinatura digital. O arquivo original continua "
@@ -792,7 +796,7 @@ class MainWindow(QMainWindow):
             if idx == 1:
                 self.start_ocr(item, allow_signed=True)
         elif status == "error":
-            alert(self, f"OCR de “{name}” não concluído", str(data), [("OK", "default")])
+            alert(self, trf("OCR de “{}” não concluído", name), str(data), [("OK", "default")])
         cur = self.current()
         if cur is not None:
             cur.refresh()

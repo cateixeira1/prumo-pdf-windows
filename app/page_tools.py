@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayo
                                QSpinBox, QVBoxLayout, QWidget)
 
 import pdfops
+from i18n import raw, tr, trf, trn
 from ios_kit import Label, PrimaryButton, SheetOverlay, TileCard, sheet_header
 from ios_theme import T, font
 
@@ -211,7 +212,7 @@ class CropPreview(QWidget):
 def _scope_row(total: int, current: int):
     """Caixa "Aplicar a" (esta página, todas, ímpares, pares, escolher) e o campo de páginas."""
     combo = QComboBox()
-    combo.addItem(f"Só esta página ({current})", "this")
+    combo.addItem(trf("Só esta página ({})", current), "this")
     combo.addItem("Todas as páginas", "all")
     combo.addItem("Páginas ímpares (1, 3, 5…)", "odd")
     combo.addItem("Páginas pares (2, 4, 6…)", "even")
@@ -219,7 +220,7 @@ def _scope_row(total: int, current: int):
     combo.setMinimumHeight(34)
     field = QLineEdit()
     field.setMinimumHeight(32)
-    field.setPlaceholderText(f"Ex.: 1, 3-5, 10-fim (de 1 a {total})")
+    field.setPlaceholderText(trf("Ex.: 1, 3-5, 10-fim (de 1 a {})", total))
     field.hide()
     combo.currentIndexChanged.connect(lambda _i: field.setVisible(combo.currentData() == "custom"))
     return combo, field
@@ -338,10 +339,10 @@ def crop_dialog(app, item, start_page: int = 0) -> bool:
 
     def show():
         page = st["page"]
-        page_label.setText(f"Página {page + 1} de {total}")
+        page_label.setText(trf("Página {} de {}", page + 1, total))
         prev_b.setEnabled(page > 0)
         next_b.setEnabled(page < total - 1)
-        combo.setItemText(0, f"Só esta página ({page + 1})")
+        combo.setItemText(0, trf("Só esta página ({})", page + 1))
         img = None
         try:
             img = render_full_page(item.path, page, 700)
@@ -351,7 +352,7 @@ def crop_dialog(app, item, start_page: int = 0) -> bool:
             img = img.transformed(QTransform().rotate(st["rot"]))
         st["img"] = img
         preview.set_page(img, page_size())
-        rot_label.setText(f"Giro a aplicar: {st['rot'] % 360}°" if st["rot"] % 360 else "Sem giro a aplicar.")
+        rot_label.setText(trf("Giro a aplicar: {}°", st['rot'] % 360) if st["rot"] % 360 else tr("Sem giro a aplicar."))
         set_margins(st["margins"], False)
 
     def set_margins(m, touched):
@@ -423,9 +424,13 @@ def crop_dialog(app, item, start_page: int = 0) -> bool:
     if app.attempt(lambda: res.setdefault("n", app.lib.modify(
             item, lambda p: pdfops.crop_and_rotate(p, pages, margins, rot), keep_review=True)), busy="Salvando…"):
         n = res.get("n") or len(pages)
-        what = " e ".join(x for x in ("cortada" + ("s" if n != 1 else "") if margins is not None else "",
-                                      "girada" + ("s" if n != 1 else "") if rot else "") if x)
-        app.toast(f"{n} página{'s' if n != 1 else ''} {what}. Use “Desfazer última alteração” se precisar.")
+        if margins is not None and rot:
+            msg = trn(n, "1 página cortada e girada.", "{} páginas cortadas e giradas.")
+        elif rot:
+            msg = trn(n, "1 página girada.", "{} páginas giradas.")
+        else:
+            msg = trn(n, "1 página cortada.", "{} páginas cortadas.")
+        app.toast(msg + " " + tr("Use “Desfazer última alteração” se precisar."))
         return True
     return False
 
@@ -485,8 +490,8 @@ def number_dialog(app, item) -> bool:
     for key, label in pdfops.NUMBER_POSITIONS.items():
         pos.addItem(label, key)
     fmt = QComboBox()
-    for key, (label, _t) in pdfops.NUMBER_FORMATS.items():
-        fmt.addItem(label, key)
+    for key in pdfops.NUMBER_FORMATS:
+        fmt.addItem(raw(pdfops.number_example(key)), key)   # exemplo no idioma em que o número é gravado
     start = QSpinBox()
     start.setRange(0, 99999)
     start.setValue(1)
@@ -529,8 +534,8 @@ def number_dialog(app, item) -> bool:
         sample = pdfops.number_text(fmt.currentData(), start.value(), last)
         preview.set_options(sample, pos.currentData(), size.value(), margin.value() * MM)
         count = total - n_first + 1
-        info.setText(f"{count} página{'s' if count != 1 else ''}: de “{sample}” até "
-                     f"“{pdfops.number_text(fmt.currentData(), last, last)}”.")
+        info.setText(trn(count, "1 página: de “{}” até “{}”.", "{} páginas: de “{}” até “{}”.", sample,
+                         pdfops.number_text(fmt.currentData(), last, last)))
 
     for w in (pos, fmt):
         w.currentIndexChanged.connect(update)
@@ -553,19 +558,21 @@ def number_dialog(app, item) -> bool:
 
 def _numbering_message(n: int, report) -> str:
     """Aviso depois de numerar: quantas páginas e o que o Prumo fez para o número não ficar por cima de nada."""
-    parts = ["1 página numerada." if n == 1 else f"{n} páginas numeradas."]
+    parts = [trn(n, "1 página numerada.", "{} páginas numeradas.")]
     if report.replaced:
-        parts.append("Os números que o Prumo tinha gravado antes nessa posição foram trocados pelos novos.")
+        parts.append(tr("Os números que o Prumo tinha gravado antes nessa posição foram trocados pelos novos."))
     if len(report.moved) == 1:
-        parts.append(f"Na página {report.moved[0]} já havia algo na posição escolhida (por exemplo, um número "
-                     "impresso); o número foi deslocado para não ficar por cima.")
+        parts.append(trf("Na página {} já havia algo na posição escolhida (por exemplo, um número "
+                         "impresso); o número foi deslocado para não ficar por cima.", report.moved[0]))
     elif report.moved:
-        parts.append(f"Nas páginas {pdfops.format_ranges(report.moved)} já havia algo na posição escolhida (por "
-                     "exemplo, um número impresso); o número foi deslocado para não ficar por cima.")
+        parts.append(trf("Nas páginas {} já havia algo na posição escolhida (por exemplo, um número "
+                         "impresso); o número foi deslocado para não ficar por cima.",
+                         pdfops.format_ranges(report.moved)))
     if len(report.crowded) == 1:
-        parts.append(f"Na página {report.crowded[0]} não achei lugar livre perto; o número ficou na posição escolhida.")
+        parts.append(trf("Na página {} não achei lugar livre perto; o número ficou na posição escolhida.",
+                         report.crowded[0]))
     elif report.crowded:
-        parts.append(f"Nas páginas {pdfops.format_ranges(report.crowded)} não achei lugar livre perto; o número "
-                     "ficou na posição escolhida.")
-    parts.append("Use “Desfazer última alteração” se precisar.")
+        parts.append(trf("Nas páginas {} não achei lugar livre perto; o número ficou na posição escolhida.",
+                         pdfops.format_ranges(report.crowded)))
+    parts.append(tr("Use “Desfazer última alteração” se precisar."))
     return " ".join(parts)

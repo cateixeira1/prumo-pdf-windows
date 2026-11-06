@@ -380,7 +380,9 @@ def office_to_pdf(progid: str, src: Path, dest: Path, timeout=180) -> None:
                           creationflags=flags)
     if proc.returncode != 0 or not dest.exists():
         msg = (proc.stderr or proc.stdout or "").strip().splitlines()
-        raise UserError("O Office não conseguiu converter o arquivo" + (f": {msg[-1]}" if msg else "."))
+        from i18n import tr, trf
+        raise UserError(trf("O Office não conseguiu converter o arquivo: {}", msg[-1]) if msg
+                        else tr("O Office não conseguiu converter o arquivo."))
 
 
 def libreoffice_to_pdf(soffice: Path, src: Path, dest: Path, timeout=240) -> None:
@@ -413,9 +415,10 @@ def office_document_to_pdf(src: Path, dest: Path) -> bool:
     if src.suffix.lower() == ".docx":
         docx_simplified(src, dest)
         return True
+    from i18n import tr, trf
     app = {"word": "o Word", "excel": "o Excel", "powerpoint": "o PowerPoint"}.get(kind(src), "o Office")
-    raise UserError(f"Para converter “{src.name}” é preciso ter {app} ou o LibreOffice (gratuito) instalado "
-                    "neste computador. Arquivos .docx, imagens e textos convertem sem eles.")
+    raise UserError(trf("Para converter “{}” é preciso ter {} ou o LibreOffice (gratuito) instalado "
+                        "neste computador. Arquivos .docx, imagens e textos convertem sem eles.", src.name, tr(app)))
 
 
 # --- Conversão de uma lista -------------------------------------------------------------
@@ -442,7 +445,7 @@ def convert(paths: list[str | Path], combine_images: bool = False, combined_name
         first = group[0]
         name = (combined_name or first.stem) if len(group) > 1 else first.stem
         if progress:
-            progress(n, len(jobs), first.name if len(group) == 1 else f"{len(group)} imagens")
+            progress(n, len(jobs), first.name if len(group) == 1 else __import__("i18n").trf("{} imagens", len(group)))
         dest = work / f"{n:03d}.pdf"
         try:
             if k == "images":

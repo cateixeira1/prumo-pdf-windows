@@ -24,6 +24,9 @@ COLORS: dict[str, tuple[str, tuple[float, float, float]]] = {
     "pink": ("Rosa", (1.0, 0.6, 0.8)),
     "orange": ("Laranja", (1.0, 0.7, 0.36)),
 }
+# Dica de cada cor (frase inteira: em outras línguas a cor muda de forma dentro da frase)
+COLOR_TIPS = {"yellow": "Destacar em amarelo", "green": "Destacar em verde", "blue": "Destacar em azul",
+              "pink": "Destacar em rosa", "orange": "Destacar em laranja"}
 AUTHOR = "Prumo PDF"
 PAD = 0.8   # folga em volta das linhas marcadas (pontos)
 

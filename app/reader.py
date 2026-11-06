@@ -36,6 +36,13 @@ from reader_history import ReaderHistory
 from reader_select import SelectionToolbar
 from ios_kit import (CircleButton, EmptyState, Label, Screen, SearchField, TextButton, menu_action, styled_menu)
 from ios_theme import MARGIN, T, connect_alive, font, glyph_icon, paint_glyph
+from i18n import raw, tr, trf
+import i18n
+
+
+def step_label(label: str) -> str:
+    """Nome de um passo do desfazer dentro de uma frase ("Desfeito: cor do destaque.")."""
+    return label.lower() if i18n.current() == "pt" else tr(label)
 
 GAP = 14
 MAX_W = 900            # largura da página com zoom 100%, se a janela couber
@@ -284,7 +291,7 @@ class PagesView(QWidget):
             else:
                 p.setPen(QColor(150, 150, 150))
                 p.setFont(font(13))
-                p.drawText(r, Qt.AlignCenter, f"Página {i + 1}")
+                p.drawText(r, Qt.AlignCenter, trf("Página {}", i + 1))
             p.setPen(QPen(T.color("thumb_border"), 0.8))
             p.setBrush(Qt.NoBrush)
             p.drawRect(r)
@@ -890,7 +897,7 @@ class ToolPanel(QScrollArea):
             b.restyle()
 
     def _title(self, text):
-        t = Label(text.upper(), 12, 700, "secondary", wrap=False)
+        t = Label(tr(text).upper(), 12, 700, "secondary", wrap=False)
         t.setContentsMargins(4, 12, 0, 4)
         self.lay.addWidget(t)
 
@@ -912,7 +919,7 @@ class ToolPanel(QScrollArea):
         row.addWidget(sel)
         self.tools.append(sel)
         for key, (label, _rgb) in annotations.COLORS.items():
-            sw = _Swatch(key, f"Destacar em {label.lower()}", color=highlight_qcolor(key))
+            sw = _Swatch(key, annotations.COLOR_TIPS[key], color=highlight_qcolor(key))
             sw.clicked.connect(lambda _c=False, k=key: s.set_tool("highlight", k))
             row.addWidget(sw)
             self.tools.append(sw)
@@ -1453,7 +1460,7 @@ class _ReaderBase(Screen):
             return
         out = {}
         if self.app.attempt(lambda: out.setdefault("s", self.history.undo()), busy="Desfazendo…") and out.get("s"):
-            self.app.toast(f"Desfeito: {out['s'].label.lower()}.")
+            self.app.toast(trf("Desfeito: {}.", step_label(out['s'].label)))
         self._after_history()
 
     def redo(self):
@@ -1462,7 +1469,7 @@ class _ReaderBase(Screen):
             return
         out = {}
         if self.app.attempt(lambda: out.setdefault("s", self.history.redo()), busy="Refazendo…") and out.get("s"):
-            self.app.toast(f"Refeito: {out['s'].label.lower()}.")
+            self.app.toast(trf("Refeito: {}.", step_label(out['s'].label)))
         self._after_history()
 
     def undo_highlight(self):   # nome antigo (atalhos e testes)
@@ -1477,8 +1484,10 @@ class _ReaderBase(Screen):
         h = getattr(self, "history", None)
         self.undo_btn.setEnabled(bool(h and h.can_undo))
         self.redo_btn.setEnabled(bool(h and h.can_redo))
-        self.undo_btn.setToolTip("Desfazer (Ctrl+Z)" + (f": {h.undo_steps[-1].label.lower()}" if h and h.can_undo else ""))
-        self.redo_btn.setToolTip("Refazer (Ctrl+Y)" + (f": {h.redo_steps[-1].label.lower()}" if h and h.can_redo else ""))
+        self.undo_btn.setToolTip(trf("Desfazer (Ctrl+Z): {}", step_label(h.undo_steps[-1].label))
+                                 if h and h.can_undo else tr("Desfazer (Ctrl+Z)"))
+        self.redo_btn.setToolTip(trf("Refazer (Ctrl+Y): {}", step_label(h.redo_steps[-1].label))
+                                 if h and h.can_redo else tr("Refazer (Ctrl+Y)"))
 
     def _tracked(self, label, fn, items=None):
         """Roda uma ferramenta que pode mudar o PDF, guardando o antes e o depois para desfazer."""
@@ -1520,7 +1529,7 @@ class _ReaderBase(Screen):
         import summary
         lib = self.app.lib
         existing = summary.find_summary(lib, self.item)
-        store = summary._store_path(lib, summary.summary_rel(self.item))
+        store = summary._store_path(lib, summary.summary_rel(self.item, lib))
         files = self.history.begin([existing] if existing is not None else [], [store])
         res = {}
         ok = self.app.attempt(lambda: res.setdefault("item", summary.add_excerpts(lib, self.item, found)),
@@ -1529,7 +1538,7 @@ class _ReaderBase(Screen):
         self.history.commit("Adicionar ao resumo", files, [new] if (new is not None and existing is None) else [])
         if new is not None:
             self.clear_selection()
-            self.app.toast(f"Trecho adicionado a “{new.name}”.", "Abrir", lambda: self.app.read(new))
+            self.app.toast(trf("Trecho adicionado a “{}”.", new.name), "Abrir", lambda: self.app.read(new))
         self._sync_ui()
 
     def summary_item(self):
@@ -1925,7 +1934,7 @@ class ReaderScreen(_ReaderBase):
 
     def _finish_count(self, any_text):
         if self.results:
-            self.search_bar.set_count(f"{self.index + 1} de {len(self.results)}")
+            self.search_bar.set_count(trf("{} de {}", self.index + 1, len(self.results)))
             return
         if not any_text:
             twin = _twin(self.app.lib, self.item)
@@ -1945,7 +1954,7 @@ class ReaderScreen(_ReaderBase):
         self.index = (self.index + d) % len(self.results)
         self.view.show_hit(self.results[self.index])
         if self._search_job is None:
-            self.search_bar.set_count(f"{self.index + 1} de {len(self.results)}")
+            self.search_bar.set_count(trf("{} de {}", self.index + 1, len(self.results)))
 
     def clear_search(self):
         if self._search_job is not None:
@@ -2027,12 +2036,12 @@ class ReaderScreen(_ReaderBase):
             n = len(self.view.sizes)
             cur = self.view.current_page()
             zoom = f" · {round(self.view.zoom * 100)}%" if abs(self.view.zoom - 1.0) > 1e-6 else ""
-            self.counter.set_text(f"Página {cur + 1} de {n}{zoom}")
+            self.counter.set_text(trf("Página {} de {}", cur + 1, n) + zoom)
             self._place_counter(self.scroll)
             side = self._visible_sidebar()
             if side is not None:
                 side.set_current(cur)
-            self.set_title(self._name + (f" · {self._extra}" if self._extra else ""))
+            self.set_title(raw(self._name + (f" · {tr(self._extra)}" if self._extra else "")))
         except RuntimeError:      # tela já destruída
             pass
 
@@ -2167,13 +2176,13 @@ class TextReaderScreen(_ReaderBase):
             return
         app.lib.mark_opened(self.item)
         self.add_mode_switch()
-        self.set_title(f"{self.item.name} · modo leitor")
+        self.set_title(raw(f"{self.item.name} · {tr('modo leitor')}"))
         self._reopen_text(self.item)
         try:
             sizes = page_sizes(self.item.path, self.password)
         except Exception as exc:  # noqa: BLE001
             sizes = []
-            self.app.show_error(f"Não foi possível ler o texto: {exc}")
+            self.app.show_error(trf("Não foi possível ler o texto: {}", exc))
         self._setup_sides(self.browser, sizes)
         for seq, fn in (("Ctrl++", lambda: self.set_size(self.size + 2)), ("Ctrl+=", lambda: self.set_size(self.size + 2)),
                         ("Ctrl+-", lambda: self.set_size(self.size - 2))):
@@ -2241,20 +2250,20 @@ class TextReaderScreen(_ReaderBase):
 
         if self.is_empty:
             block(para_fmt)
-            cur.insertText("Este PDF não tem texto para o modo leitor: as páginas são imagens. "
-                           "Faça o OCR e abra o modo leitor na cópia com OCR.", body)
+            cur.insertText(tr("Este PDF não tem texto para o modo leitor: as páginas são imagens. "
+                              "Faça o OCR e abra o modo leitor na cópia com OCR."), body)
         for pg, paras in zip(self.pages, getattr(self, "_mapped", [])):
             head = QTextBlockFormat()
             head.setTopMargin(18 if pg.number > 1 else 0)
             head.setBottomMargin(6)
             block(head)
             self.page_pos.append(cur.position())
-            cur.insertText(f"— Página {pg.number} —", gray)
+            cur.insertText(trf("— Página {} —", pg.number), gray)
             if pg.number in review:
-                cur.insertText(" · revisar (baixa confiança no OCR)", warn)
+                cur.insertText(" · " + tr("revisar (baixa confiança no OCR)"), warn)
             if not paras:
                 block(para_fmt)
-                cur.insertText("(sem texto)", gray)
+                cur.insertText(tr("(sem texto)"), gray)
                 continue
             dp = self._doc_pos.setdefault(pg.number - 1, {})
             for text, idx in paras:
@@ -2375,7 +2384,7 @@ class TextReaderScreen(_ReaderBase):
                 self.counter.hide()
                 return
             cur = self.current_page_index()
-            self.counter.set_text(f"Página {cur + 1} de {n}")
+            self.counter.set_text(trf("Página {} de {}", cur + 1, n))
             self._place_counter(self.browser)
             side = self._visible_sidebar()
             if side is not None:
@@ -2462,7 +2471,7 @@ class TextReaderScreen(_ReaderBase):
         m.exec(self.more.mapToGlobal(self.more.rect().bottomLeft()))
 
     def copy_all(self):
-        text = "\n\n".join(f"— Página {p.number} —\n\n" + ("\n\n".join(p.paragraphs) or "(sem texto)")
+        text = "\n\n".join(trf("— Página {} —", p.number) + "\n\n" + ("\n\n".join(p.paragraphs) or tr("(sem texto)"))
                             for p in self.pages)
         QGuiApplication.clipboard().setText(text)
         self.app.toast("Texto copiado. Cole com Ctrl+V onde quiser.")
@@ -2497,4 +2506,4 @@ class TextReaderScreen(_ReaderBase):
             cur.setPosition(a)
             self.browser.setTextCursor(cur)
             self.browser.ensureCursorVisible()
-            self.search_bar.set_count(f"{self.index + 1} de {len(self.matches)}")
+            self.search_bar.set_count(trf("{} de {}", self.index + 1, len(self.matches)))

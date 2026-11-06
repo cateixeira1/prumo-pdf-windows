@@ -23,6 +23,22 @@ LANGS: list[tuple[str, str]] = [
 ]
 NAMES = dict(LANGS)
 MAX_LANGS = 4          # o Tesseract fica lento e impreciso com muitos idiomas juntos
+# Idioma do OCR quando o usuário ainda não escolheu: o mesmo do aplicativo.
+_BY_UI = {"pt": "por", "en": "eng", "es": "spa", "fr": "fra", "de": "deu", "ja": "jpn", "zh-CN": "chi_sim",
+          "zh-TW": "chi_tra", "nb": "nor", "sv": "swe", "da": "dan", "fi": "fin"}
+
+
+def default() -> str:
+    try:
+        import i18n
+        code = _BY_UI.get(i18n.current(), "eng")
+    except Exception:
+        code = "por"
+    try:
+        have = installed()
+    except Exception:
+        return code
+    return code if code in have else (have[0] if have else "por")
 
 
 def installed(max_precision: bool = False) -> list[str]:
@@ -35,11 +51,11 @@ def installed(max_precision: bool = False) -> list[str]:
 
 def parse(value: str | None) -> list[str]:
     out = []
-    for c in (value or "por").split("+"):
+    for c in (value or default()).split("+"):
         c = c.strip()
         if c in NAMES and c not in out:
             out.append(c)
-    return out or ["por"]
+    return out or [default()]
 
 
 def join(codes: list[str]) -> str:
@@ -47,7 +63,7 @@ def join(codes: list[str]) -> str:
     for c in codes:
         if c in NAMES and c not in seen:
             seen.append(c)
-    return "+".join(seen[:MAX_LANGS]) or "por"
+    return "+".join(seen[:MAX_LANGS]) or default()
 
 
 def resolve(value: str | None, max_precision: bool = False) -> tuple[Path | None, str]:
@@ -55,7 +71,7 @@ def resolve(value: str | None, max_precision: bool = False) -> tuple[Path | None
     Pasta de modelos e texto de idiomas para o Tesseract. Os modelos “best” existem só para alguns idiomas;
     se faltar algum, usa os modelos padrão para não falhar.
     """
-    codes = [c for c in parse(value) if c in installed()] or ["por"]
+    codes = [c for c in parse(value) if c in installed()] or [default()]
     std = core.tessdata_dir(False)
     if max_precision:
         best = core.tessdata_dir(True)

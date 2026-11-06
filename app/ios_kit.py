@@ -17,11 +17,16 @@ from ios_theme import (DOC_TILE_HEIGHT, MARGIN, SPACING, TILE_HEIGHT, TILE_RADIU
 
 
 def elide(text: str, f, width: int) -> str:
-    return QFontMetrics(f).elidedText(text, Qt.ElideRight, max(10, width))
+    from i18n import Raw, tr
+    out = QFontMetrics(f).elidedText(tr(text), Qt.ElideRight, max(10, width))
+    return Raw(out) if isinstance(text, Raw) else out
 
 
 def wrap_lines(text: str, f, width: int, max_lines: int) -> list[str]:
     """Quebra o texto em até `max_lines` linhas; a última é cortada com reticências."""
+    from i18n import Raw, tr
+    keep_raw = isinstance(text, Raw)
+    text = tr(text)
     fm = QFontMetrics(f)
     words, lines, cur = text.split(), [], ""
     for w in words:
@@ -38,6 +43,8 @@ def wrap_lines(text: str, f, width: int, max_lines: int) -> list[str]:
     if lines:
         lines[-1] = fm.elidedText(lines[-1], Qt.ElideRight, width)
         lines = [fm.elidedText(l, Qt.ElideRight, width) for l in lines]
+    if keep_raw:                     # nome de arquivo: cada linha continua sem tradução
+        lines = [Raw(l) for l in lines]
     return lines or [""]
 
 
@@ -123,11 +130,21 @@ class Tile(TileBase):
     def set_content(self, title=None, count=None, subtitle=None):
         if title is not None:
             self.title = title
+        changed = subtitle != self.subtitle
         self.count, self.subtitle = count, subtitle
+        if changed and hasattr(self.parentWidget(), "_relayout"):
+            self.parentWidget()._relayout()      # o subtítulo novo pode precisar de outra linha
         self.update()
 
+    # Título e subtítulo quebram em até 2 linhas: em alemão ou finlandês o texto é bem mais longo que em português.
+    def _lines(self, w):
+        title = wrap_lines(self.title, font(16, 600), w - 24, 2)
+        sub = wrap_lines(self.subtitle, font(11.5, 500), w - 24, 2) if self.subtitle else []
+        return title, sub
+
     def heightForWidth(self, w):
-        return TILE_HEIGHT + (14 if self.subtitle else 0)
+        title, sub = self._lines(w)
+        return TILE_HEIGHT + 20 * (len(title) - 1) + (15 * len(sub) - 1 if sub else 0)
 
     def sizeHint(self):
         return QSize(180, self.heightForWidth(180))
@@ -141,18 +158,18 @@ class Tile(TileBase):
             p.setFont(font(24, 700, display=True))
             p.setPen(self.text_color())
             p.drawText(QRectF(50, 6, w - 62, 40), Qt.AlignRight | Qt.AlignVCenter, self.count)
+        title, sub = self._lines(w)
         bottom = self.height() - 12
-        if self.subtitle:
-            f = font(11.5, 500)
-            p.setFont(f)
+        if sub:
+            p.setFont(font(11.5, 500))
             p.setPen(self.secondary_color())
-            p.drawText(QRectF(12, bottom - 15, w - 24, 15), Qt.AlignLeft | Qt.AlignVCenter,
-                       elide(self.subtitle, f, w - 24))
-            bottom -= 16
-        f = font(16, 600)
-        p.setFont(f)
+            for i, line in enumerate(sub):
+                p.drawText(QRectF(12, bottom - 15 * (len(sub) - i), w - 24, 15), Qt.AlignLeft | Qt.AlignVCenter, line)
+            bottom -= 15 * len(sub) + 1
+        p.setFont(font(16, 600))
         p.setPen(self.text_color())
-        p.drawText(QRectF(12, bottom - 21, w - 24, 21), Qt.AlignLeft | Qt.AlignVCenter, elide(self.title, f, w - 24))
+        for i, line in enumerate(title):
+            p.drawText(QRectF(12, bottom - 20 * (len(title) - i) - 1, w - 24, 21), Qt.AlignLeft | Qt.AlignVCenter, line)
 
 
 class WideTile(TileBase):
@@ -1003,7 +1020,8 @@ def alert(window: QWidget, title: str, message: str = "", buttons=(("OK", "defau
         ov.focus_widget = edit
     ov.lay.addLayout(head)
     ov.lay.addWidget(_line())
-    horizontal = len(buttons) == 2 and all(len(b[0]) <= 14 for b in buttons)
+    from i18n import tr
+    horizontal = len(buttons) == 2 and all(len(tr(b[0])) <= 14 for b in buttons)
     row = QHBoxLayout() if horizontal else QVBoxLayout()
     row.setSpacing(0)
     btns = []
@@ -1431,9 +1449,10 @@ class JobBanner(QFrame):
         p.end()
         base.setDevicePixelRatio(2)
         self.icon.setPixmap(base)
-        self.title.setText(f"OCR: {name}")
-        extra = f" · mais {queued} na fila" if queued else ""
-        self.detail.setText(f"{stage}{extra}")
+        from i18n import raw, tr, trf
+        self.title.setText(raw(f"OCR: {name}"))
+        extra = " · " + trf("mais {} na fila", queued) if queued else ""
+        self.detail.setText(raw(tr(stage) + extra))
         self.detail.setStyleSheet(f"color: {T.hex('secondary')}; background: transparent;")
         self.bar.setValue(int(fraction * 1000))
         self.reposition()

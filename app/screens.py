@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, QUrl, Signal
@@ -18,25 +17,27 @@ from ios_kit import (CircleButton, DocTile, EmptyState, FlowGrid, Label, Primary
                      WideTile, action_sheet, alert, elide, menu_action, paint_badge, sheet_header,
                      styled_menu, wrap_lines)
 from ios_theme import MARGIN, SPACING, TILE_RADIUS, T, font, glyph_icon, paint_glyph
+import i18n
+from i18n import raw, tr, trf, trn
 from library import LISTS, TEXT_LABELS, needs_ocr_status
 
 
 def pages_text(n: int) -> str:
-    return "1 página" if n == 1 else f"{n} páginas"
+    return trn(n, "1 página", "{} páginas")
 
 
 def size_text(n: int) -> str:
     if n < 1000:
-        return f"{n} bytes"
+        return trf("{} bytes", n)
     for unit in ("KB", "MB", "GB"):
         n /= 1000
         if n < 1000 or unit == "GB":
-            return (f"{n:.0f} {unit}" if n >= 10 or unit == "KB" else f"{n:.1f} {unit}").replace(".", ",")
+            return f"{i18n.fmt_number(n, 0 if n >= 10 or unit == 'KB' else 1)} {unit}"
     return ""
 
 
 def date_text(ts: float) -> str:
-    return time.strftime("%d/%m/%Y, %H:%M", time.localtime(ts))
+    return i18n.fmt_datetime(ts)
 
 
 # --- Ações comuns sobre PDFs --------------------------------------------------
@@ -60,17 +61,17 @@ class Actions:
     def move(self, items):
         if not items:
             return
-        title = "Mover PDF" if len(items) == 1 else f"Mover {len(items)} PDFs"
+        title = trn(len(items), "Mover PDF", "Mover {} PDFs")
         folder = pick_folder(self.app, title, items[0].folder if len(items) == 1 else None)
         if folder is None:
             return
         if self.app.attempt(lambda: self.lib.move(items, folder)):
-            self.app.toast(f"Movido para {folder.rsplit('/', 1)[-1] if folder else 'Sem pasta'}.")
+            self.app.toast(trf("Movido para {}.", raw(folder.rsplit('/', 1)[-1]) if folder else tr("Sem pasta")))
 
     def delete(self, items, after=None) -> bool:
         if not items:
             return False
-        title = f"Excluir “{items[0].name}”?" if len(items) == 1 else f"Excluir {len(items)} PDFs?"
+        title = trf("Excluir “{}”?", items[0].name) if len(items) == 1 else trf("Excluir {} PDFs?", len(items))
         idx = alert(self.app, title,
                     "O arquivo vai para a Lixeira do Windows. Dá para recuperar por lá, se precisar.",
                     [("Cancelar", "cancel"), ("Excluir", "destructive")])
@@ -85,7 +86,7 @@ class Actions:
             return
         one = len(items) == 1
         options = [
-            ("Copiar arquivo" if one else f"Copiar {len(items)} arquivos", "default", "copy"),
+            (trn(len(items), "Copiar arquivo", "Copiar {} arquivos"), "default", "copy"),
             ("Exportar cópia para…", "default", "export"),
             ("Mostrar no Explorador", "default", "explorer"),
         ]
@@ -96,8 +97,8 @@ class Actions:
                            "no WhatsApp, no e-mail ou em outra pasta.", options)
         if idx == 0:
             self.app.copy_files([i.path for i in items])
-            self.app.toast("Arquivo copiado. Cole com Ctrl+V onde quiser." if one
-                           else f"{len(items)} arquivos copiados. Cole com Ctrl+V onde quiser.")
+            self.app.toast(trn(len(items), "Arquivo copiado. Cole com Ctrl+V onde quiser.",
+                               "{} arquivos copiados. Cole com Ctrl+V onde quiser."))
         elif idx == 1:
             self.app.export_copies(items)
         elif idx == 2:
@@ -117,7 +118,7 @@ class Actions:
         elif item.meta.is_ocr_result:
             self.app.toast("Este arquivo já é o resultado de um OCR.")
         elif copy is not None:
-            self.app.toast(f"Já existe uma cópia com OCR: {copy.name}", "Abrir",
+            self.app.toast(trf("Já existe uma cópia com OCR: {}", copy.name), "Abrir",
                            lambda: self.app.open_document(copy.id))
         elif item.meta.text_status == "digital":
             self.app.toast("Todas as páginas já têm texto selecionável. O OCR não é necessário.")
@@ -127,7 +128,7 @@ class Actions:
     def duplicate(self, item):
         res = {}
         if self.app.attempt(lambda: res.setdefault("c", self.lib.duplicate(item))) and res.get("c"):
-            self.app.toast(f"Cópia criada: {res['c'].name}", "Abrir", lambda: self.app.open_document(res["c"].id))
+            self.app.toast(trf("Cópia criada: {}", res['c'].name), "Abrir", lambda: self.app.open_document(res["c"].id))
 
     def undo(self, item) -> bool:
         if not self.lib.can_undo(item):
@@ -185,8 +186,8 @@ def make_doc_tile(app, item, show_folder=False, on_click=None, menu=True):
 
 def make_folder_tile(app, folder, on_click=None):
     sub = folder.subfolder_count
-    tile = Tile(folder.name, "folder", "indigo", str(folder.total_doc_count),
-                f"{sub} subpasta{'s' if sub != 1 else ''}" if sub else None, rounded_icon=True)
+    tile = Tile(raw(folder.name), "folder", "indigo", str(folder.total_doc_count),
+                trn(sub, "1 subpasta", "{} subpastas") if sub else None, rounded_icon=True)
     tile.clicked.connect(on_click or (lambda: app.push(DocumentGridScreen(app, folder=folder.path))))
     tile.setContextMenuPolicy(Qt.CustomContextMenu)
 
@@ -217,8 +218,8 @@ def add_pdfs_to_folder(app, folder: str) -> list:
     Adiciona PDFs a uma pasta: do computador (copia para dentro dela) ou de qualquer lugar
     da biblioteca (outra pasta, Todos os PDFs, Favoritos…), movendo ou copiando.
     """
-    name = folder.rsplit("/", 1)[-1] if folder else "Sem pasta"
-    picked = choose_documents(app, f"Adicionar a “{name}”", multiple=True, allow_import=True,
+    name = raw(folder.rsplit("/", 1)[-1]) if folder else tr("Sem pasta")
+    picked = choose_documents(app, trf("Adicionar a “{}”", name), multiple=True, allow_import=True,
                               import_folder=folder, exclude_folder=folder)
     if not picked:
         return []
@@ -226,16 +227,16 @@ def add_pdfs_to_folder(app, folder: str) -> list:
     if not from_lib:
         return picked   # vieram do computador e já foram copiados para a pasta
     n = len(from_lib)
-    idx = alert(app, f"Mover ou copiar {'o PDF' if n == 1 else f'os {n} PDFs'}?",
+    idx = alert(app, trn(n, "Mover ou copiar o PDF?", "Mover ou copiar os {} PDFs?"),
                 "“Mover” tira o arquivo da pasta onde ele está. “Copiar” deixa o original lá e cria "
                 "uma cópia nesta pasta.",
                 [("Mover", "default"), ("Copiar", "default"), ("Cancelar", "cancel")])
     if idx == 0:
         if app.attempt(lambda: app.lib.move(from_lib, folder)):
-            app.toast(f"{'PDF movido' if n == 1 else f'{n} PDFs movidos'} para {name}.")
+            app.toast(trn(n, "PDF movido para {}.", "{} PDFs movidos para {}.", name))
     elif idx == 1:
         if app.attempt(lambda: app.lib.copy_into(from_lib, folder), busy="Copiando…"):
-            app.toast(f"{'PDF copiado' if n == 1 else f'{n} PDFs copiados'} para {name}.")
+            app.toast(trn(n, "PDF copiado para {}.", "{} PDFs copiados para {}.", name))
     return picked
 
 
@@ -263,8 +264,8 @@ def delete_folder(app, folder):
     elif n == 1:
         msg = "A pasta e o PDF dentro dela vão para a Lixeira do Windows."
     else:
-        msg = f"A pasta e os {n} PDFs dentro dela vão para a Lixeira do Windows."
-    idx = alert(app, f"Excluir a pasta “{folder.name}”?", msg,
+        msg = trf("A pasta e os {} PDFs dentro dela vão para a Lixeira do Windows.", n)
+    idx = alert(app, trf("Excluir a pasta “{}”?", folder.name), msg,
                 [("Cancelar", "cancel"), ("Excluir", "destructive")])
     if idx == 1:
         app.attempt(lambda: app.lib.delete_folder(folder.path))
@@ -447,7 +448,7 @@ class HomeScreen(Screen):
                     "A busca procura no nome dos arquivos e no texto dos PDFs. "
                     "PDFs escaneados só aparecem pelo texto depois do OCR."))
             else:
-                self.results.addWidget(SectionTitle(f"{len(found)} resultado{'s' if len(found) != 1 else ''}"))
+                self.results.addWidget(SectionTitle(trn(len(found), "1 resultado", "{} resultados")))
                 g = FlowGrid()
                 for it in found:
                     g.add(make_doc_tile(self.app, it, show_folder=True))
@@ -486,7 +487,7 @@ def run_tool(app, key, title):
         if not todo:
             app.toast("Esses PDFs já têm texto selecionável. O OCR não é necessário.")
         elif len(todo) > 1:
-            app.toast(f"{len(todo)} PDFs na fila do OCR.")
+            app.toast(trf("{} PDFs na fila do OCR.", len(todo)))
     elif key == "organize":
         app.organize(item)
     elif key == "insert":
@@ -540,7 +541,7 @@ class SelectionBar(QWidget):
 
     def update_state(self, n: int, any_ocr: bool):
         self.label.setText("Clique nos PDFs ou arraste sobre eles" if n == 0
-                           else f"{n} selecionado{'s' if n != 1 else ''}")
+                           else trn(n, "1 selecionado", "{} selecionados"))
         enabled = {"share": n > 0, "move": n > 0, "merge": n >= 2, "ocr": any_ocr, "delete": n > 0}
         for k, b in self.buttons.items():
             glyph = {"share": "share", "move": "folder_line", "merge": "stack", "ocr": "textscan", "delete": "trash"}[k]
@@ -585,7 +586,7 @@ class DocumentGridScreen(Screen):
         self.nav.right.addWidget(self.ok)
         self.nav.right.addWidget(self.more)
         self.set_title(self._title())
-        self.search = SearchField(f"Buscar em {self._title()}")
+        self.search = SearchField(trf("Buscar em {}", tr(self._title())))
         self.search.debounced.connect(lambda _t: self.refresh())
         self.content.addWidget(self.search)
         self.bar = SelectionBar(self)
@@ -807,8 +808,9 @@ class FoldersScreen(Screen):
         new = WideTile("Nova pasta", "folderplus", "blue")
         new.clicked.connect(lambda: new_folder_flow(app))
         self.content.addWidget(new)
-        note = Label(f"As pastas são pastas comuns do Windows, em {lib.root}. "
-                     "Clique com o botão direito numa pasta para renomear, excluir ou abrir no Explorador.",
+        note = Label(trf("As pastas são pastas comuns do Windows, em {}. "
+                         "Clique com o botão direito numa pasta para renomear, excluir ou abrir no Explorador.",
+                         raw(str(lib.root))),
                      13, 400, "secondary")
         note.setContentsMargins(4, 0, 4, 0)
         self.content.addWidget(note)
@@ -874,7 +876,7 @@ class DocHeader(QWidget):
         p.drawText(QRectF(x + 21, y, w - 21, 21), Qt.AlignLeft | Qt.AlignVCenter, elide(it.folder_name, font(13.5), w - 21))
         y += 21
         p.setFont(font(12.5))
-        p.drawText(QRectF(x, y, w, 21), Qt.AlignLeft | Qt.AlignVCenter, f"Alterado em {date_text(it.modified)}")
+        p.drawText(QRectF(x, y, w, 21), Qt.AlignLeft | Qt.AlignVCenter, trf("Alterado em {}", date_text(it.modified)))
         y += 24
         bx = x
         status = it.meta.text_status
@@ -921,10 +923,11 @@ class DocumentScreen(Screen):
             ic.setFixedWidth(24)
             row.addWidget(ic, 0, Qt.AlignTop)
             who = signing.describe_signatures(item.path)
-            lines = "; ".join(f"{s['name']}" + (f", em {s['when']}" if s["when"] else "") for s in who)
-            row.addWidget(Label(("Assinado digitalmente" + (f" por {lines}" if lines else "") + ". O PDF não pode "
-                                 "ser alterado sem invalidar a assinatura. Para conferir a validade, abra no "
-                                 "Adobe Reader ou em validar.iti.gov.br."), 13.5), 1)
+            lines = "; ".join(trf("{}, em {}", s["name"], s["when"]) if s["when"] else s["name"] for s in who)
+            row.addWidget(Label((trf("Assinado digitalmente por {}.", lines) if lines else
+                                 tr("Assinado digitalmente.")) + " " +
+                                tr("O PDF não pode ser alterado sem invalidar a assinatura. Para conferir a validade, "
+                                   "abra no Adobe Reader ou em validar.iti.gov.br."), 13.5), 1)
             card.lay.addLayout(row)
             self.content.addWidget(card)
         if item.meta.review_pages:
@@ -934,8 +937,9 @@ class DocumentScreen(Screen):
             ic.setPixmap(glyph_icon("warning", T.color("orange"), 20).pixmap(20, 20))
             ic.setFixedWidth(24)
             row.addWidget(ic, 0, Qt.AlignTop)
-            row.addWidget(Label(f"Revise as páginas {pdfops.format_ranges(item.meta.review_pages)}: o OCR teve baixa "
-                                "confiança nelas. Confira nomes, datas, números e valores no original.", 13.5), 1)
+            row.addWidget(Label(trf("Revise as páginas {}: o OCR teve baixa confiança nelas. Confira nomes, datas, "
+                                    "números e valores no original.", pdfops.format_ranges(item.meta.review_pages)),
+                                13.5), 1)
             card.lay.addLayout(row)
             self.content.addWidget(card)
 
@@ -1036,7 +1040,7 @@ class DocumentScreen(Screen):
             return "Já tem texto"
         if s in ("scanned", "mixed"):
             n = len(item.meta.ocr_pages or [])
-            return "1 página em imagem" if n == 1 else f"{n} páginas em imagem"
+            return trn(n, "1 página em imagem", "{} páginas em imagem")
         if s == "empty":
             return "Sem páginas"
         return "Verificando…"
@@ -1074,7 +1078,7 @@ def split_dialog(app, item):
     sheet_header(ov, "Dividir em partes", scroll=True)
     card = TileCard()
     card.lay.setSpacing(10)
-    card.lay.addWidget(Label(f"“{item.name}” tem {pages_text(total)}.", 15, 500))
+    card.lay.addWidget(Label(trf("“{}” tem {}.", item.name, pages_text(total)), 15, 500))
     card.lay.addWidget(Label("Em quantas partes você quer dividir?", 17, 600))
     edit = QLineEdit()
     edit.setValidator(QIntValidator(1, 9999))
@@ -1113,7 +1117,7 @@ def split_dialog(app, item):
         if n < 2:
             err = "Escolha pelo menos 2 partes."
         elif n > total:
-            err = f"O PDF tem {pages_text(total)}; não dá para dividir em {n} partes."
+            err = trf("O PDF tem {}; não dá para dividir em {} partes.", pages_text(total), n)
         if err:
             info.role = "red"
             info._apply()
@@ -1135,7 +1139,7 @@ def split_dialog(app, item):
                 lines.append("…")
             else:
                 i, (a, b) = s
-                lines.append(f"{item.name} - Parte {i + 1}   ·   págs. {a}–{b}")
+                lines.append(trf("{} - Parte {}", item.name, i + 1) + "   ·   " + trf("págs. {}–{}", a, b))
         preview.setText("\n".join(lines))
         btn.setEnabled(True)
         ov._place()
@@ -1153,7 +1157,7 @@ def split_dialog(app, item):
         names = {}
 
         def dest(n):
-            p = lib.unique_path(item.folder, f"{item.name} - Parte {n}")
+            p = lib.unique_path(item.folder, trf("{} - Parte {}", item.name, n))
             names[n] = p
             return p
         pdfops.split(item.path, parts, dest)
@@ -1162,7 +1166,7 @@ def split_dialog(app, item):
 
     if app.attempt(run, busy="Dividindo…"):
         folder = item.folder
-        app.toast(f"{len(created)} arquivos criados em {item.folder_name}.", "Ver",
+        app.toast(trf("{} arquivos criados em {}.", len(created), tr(item.folder_name)), "Ver",
                   lambda: app.push(DocumentGridScreen(app, folder=folder)))
 
 
@@ -1172,7 +1176,7 @@ def include_pages_dialog(app, item, source=None):
     """Inclui páginas de outro PDF (ou do próprio) em `item`: todas, ou trechos como 5-15."""
     target_total = item.page_count or pdfops.page_count(item.path)
     if source is None:
-        picked = choose_documents(app, f"Incluir páginas em “{item.name}”: de qual PDF?",
+        picked = choose_documents(app, trf("Incluir páginas em “{}”: de qual PDF?", item.name),
                                   allow_import=True, import_folder=item.folder)
         if not picked:
             return False
@@ -1183,17 +1187,17 @@ def include_pages_dialog(app, item, source=None):
     card = TileCard()
     card.lay.setSpacing(8)
     same = source.id == item.id
-    card.lay.addWidget(Label(f"De: “{source.name}”{' (este mesmo PDF)' if same else ''} · {pages_text(src_total)}",
-                             14, 600))
+    card.lay.addWidget(Label((trf("De: “{}” (este mesmo PDF)", source.name) if same else trf("De: “{}”", source.name))
+                             + " · " + pages_text(src_total), 14, 600))
     card.lay.addWidget(Label("Quais páginas? Deixe em branco para incluir todas, ou digite, por exemplo: "
                              "3, 5-15, 20-fim", 13, 400, "secondary"))
     field = QLineEdit()
-    field.setPlaceholderText(f"Todas (1-{src_total})")
+    field.setPlaceholderText(trf("Todas (1-{})", src_total))
     card.lay.addWidget(field)
     info = Label("", 13, 500, "teal")
     card.lay.addWidget(info)
     card.lay.addSpacing(6)
-    card.lay.addWidget(Label(f"Onde, em “{item.name}” ({pages_text(target_total)})?", 14, 600))
+    card.lay.addWidget(Label(trf("Onde, em “{}” ({})?", item.name, pages_text(target_total)), 14, 600))
     where = QComboBox()
     where.addItem("No fim", "end")
     where.addItem("No início", "start")
@@ -1225,7 +1229,7 @@ def include_pages_dialog(app, item, source=None):
             info.role = "teal"
             info._apply()
             n = len(state["pages"])
-            info.setText(f"{pages_text(n)} {'será incluída' if n == 1 else 'serão incluídas'}.")
+            info.setText(trn(n, "1 página será incluída.", "{} páginas serão incluídas."))
             btn.setEnabled(n > 0)
         except ValueError as exc:
             state["pages"] = []
@@ -1234,7 +1238,8 @@ def include_pages_dialog(app, item, source=None):
             info.setText(str(exc))
             btn.setEnabled(False)
         after.setVisible(where.currentData() == "after")
-        btn.set_title(f"Incluir {pages_text(len(state['pages']))}" if state["pages"] else "Incluir")
+        btn.set_title(trn(len(state["pages"]), "Incluir 1 página", "Incluir {} páginas") if state["pages"]
+                      else tr("Incluir"))
         ov._place()
 
     field.textChanged.connect(update)
@@ -1250,7 +1255,8 @@ def include_pages_dialog(app, item, source=None):
     src_path = source.path
     if app.attempt(lambda: app.lib.modify(item, lambda p: pdfops.insert(p, src_path, pages, at)), busy="Incluindo…"):
         n = len(pages)
-        app.toast(f"{pages_text(n)} incluída{'s' if n != 1 else ''} em {item.name}. Use “Desfazer” se precisar.")
+        app.toast(trn(n, "1 página incluída em {}. Use “Desfazer” se precisar.",
+                      "{} páginas incluídas em {}. Use “Desfazer” se precisar.", item.name))
         return True
     return False
 
@@ -1333,7 +1339,7 @@ def dewarp_dialog(app, item):
     card.lay.addWidget(Label("Quais páginas corrigir? Deixe em branco para todas, ou digite, por exemplo: 1, 3-5",
                              13, 400, "secondary"))
     field = QLineEdit()
-    field.setPlaceholderText(f"Todas (1-{total})")
+    field.setPlaceholderText(trf("Todas (1-{})", total))
     card.lay.addWidget(field)
     info = Label("", 13, 500, "teal")
     card.lay.addWidget(info)
@@ -1350,7 +1356,7 @@ def dewarp_dialog(app, item):
 
     def show_page():
         n = state["page"]
-        page_label.setText(f"Prévia da página {n} de {total}")
+        page_label.setText(trf("Prévia da página {} de {}", n, total))
         prev_b.setEnabled(n > 1)
         next_b.setEnabled(n < total)
         preview.set_images(None, None, "Preparando a prévia…")
@@ -1359,7 +1365,7 @@ def dewarp_dialog(app, item):
             pil, _size = dewarp.render_page(item.path, n - 1, dpi=110)
             preview.set_images(pil, dewarp.unwarp(pil))
         except Exception as exc:  # noqa: BLE001
-            preview.set_images(None, None, f"Não foi possível gerar a prévia: {exc}")
+            preview.set_images(None, None, trf("Não foi possível gerar a prévia: {}", exc))
 
     def update():
         t = field.text().strip()
@@ -1369,7 +1375,7 @@ def dewarp_dialog(app, item):
             info._apply()
             n = len(state["pages"])
             info.setText("Todas as páginas serão corrigidas." if not t else
-                         f"{pages_text(n)} {'será corrigida' if n == 1 else 'serão corrigidas'}.")
+                         trn(n, "1 página será corrigida.", "{} páginas serão corrigidas."))
             btn.setEnabled(n > 0)
         except ValueError as exc:
             state["pages"] = []
@@ -1393,14 +1399,14 @@ def dewarp_dialog(app, item):
     try:
         fixed = app.run_with_progress("Corrigindo as páginas…",
                                       lambda progress: dewarp.dewarp_pdf(item.path, tmp, pages, progress))
-        new = lib.adopt(tmp, f"{item.name} - corrigido", item.folder)
+        new = lib.adopt(tmp, trf("{} - corrigido", item.name), item.folder)
     except Exception as exc:  # noqa: BLE001
         tmp.unlink(missing_ok=True)
-        app.show_error(f"Não foi possível corrigir: {exc}")
+        app.show_error(trf("Não foi possível corrigir: {}", exc))
         return
     idx = alert(app, "Usar OCR agora?",
-                f"{pages_text(fixed)} {'corrigida' if fixed == 1 else 'corrigidas'} em “{new.name}”. "
-                "Com o texto reto, o OCR reconhece melhor. Fazer o OCR do PDF corrigido agora?",
+                trn(fixed, "1 página corrigida em “{}”.", "{} páginas corrigidas em “{}”.", new.name) + " " +
+                tr("Com o texto reto, o OCR reconhece melhor. Fazer o OCR do PDF corrigido agora?"),
                 [("Mais tarde", "cancel"), ("Sim", "default")])
     if idx == 1:
         app.start_ocr(new)
@@ -1551,15 +1557,15 @@ def protect_dialog(app, item):
     tmp = lib.temp_path()
     try:
         pdfops.protect(item.path, tmp, password)
-        new = lib.adopt(tmp, f"{item.name} - protegido", item.folder)
+        new = lib.adopt(tmp, trf("{} - protegido", item.name), item.folder)
     except Exception as exc:  # noqa: BLE001
         tmp.unlink(missing_ok=True)
-        app.show_error(f"Não foi possível proteger: {exc}")
+        app.show_error(trf("Não foi possível proteger: {}", exc))
         return
     if trash.isChecked():
         app.attempt(lambda: lib.delete([lib.item(item.id)] if lib.item(item.id) else []))
         app.back()
-    app.toast(f"PDF protegido: {new.name}", "Abrir", lambda: app.open_document(new.id))
+    app.toast(trf("PDF protegido: {}", new.name), "Abrir", lambda: app.open_document(new.id))
 
 
 def unprotect_dialog(app, item):
@@ -1571,13 +1577,14 @@ def unprotect_dialog(app, item):
     tmp = lib.temp_path()
     try:
         pdfops.unprotect(item.path, tmp, pw)
-        name = item.name[:-len(" - protegido")] if item.name.endswith(" - protegido") else f"{item.name} - sem senha"
+        name = i18n.strip_suffix(item.name, "{} - protegido")
+        name = name if name != item.name else trf("{} - sem senha", item.name)
         new = lib.adopt(tmp, name, item.folder)
     except Exception as exc:  # noqa: BLE001
         tmp.unlink(missing_ok=True)
-        app.show_error(f"Não foi possível remover a senha: {exc}")
+        app.show_error(trf("Não foi possível remover a senha: {}", exc))
         return
-    app.toast(f"Cópia sem senha: {new.name}", "Abrir", lambda: app.open_document(new.id))
+    app.toast(trf("Cópia sem senha: {}", new.name), "Abrir", lambda: app.open_document(new.id))
 
 
 # --- Escolher páginas (remover, extrair) --------------------------------------
@@ -1719,11 +1726,11 @@ class PagePickerScreen(Screen):
     def preview(self, i: int):
         from page_view import PagePreviewOverlay
         n = self.total
-        verb = "remover" if self.mode == "remove" else "extrair"
+        mark_text = tr("marcada para remover" if self.mode == "remove" else "marcada para extrair")
 
         def label(k):
-            mark = f" · marcada para {verb}" if (k + 1) in self.selected else ""
-            return f"Página {k + 1} de {n}{mark}"
+            mark = f" · {mark_text}" if (k + 1) in self.selected else ""
+            return trf("Página {} de {}", k + 1, n) + mark
         ov = PagePreviewOverlay(self.app, self.item.path, [(k, 0) for k in range(n)], i, label)
         self._preview = ov
         ov.open()
@@ -1763,8 +1770,10 @@ class PagePickerScreen(Screen):
             self.field.setText(pdfops.format_ranges(sorted(self.selected)))
             self.error.hide()
         n = len(self.selected)
-        verb = "Remover" if self.mode == "remove" else "Extrair"
-        self.action.set_title(f"{verb} {pages_text(n)}" if n else f"{verb} páginas")
+        if self.mode == "remove":
+            self.action.set_title(trn(n, "Remover 1 página", "Remover {} páginas") if n else tr("Remover páginas"))
+        else:
+            self.action.set_title(trn(n, "Extrair 1 página", "Extrair {} páginas") if n else tr("Extrair páginas"))
         ok = n > 0 and not (self.mode == "remove" and n >= self.total)
         self.action.setEnabled(ok)
 
@@ -1774,7 +1783,7 @@ class PagePickerScreen(Screen):
         if self.mode == "remove" and blocked_signed(app, item):
             return
         if self.mode == "remove":
-            idx = alert(app, f"Remover {pages_text(len(pages))}?",
+            idx = alert(app, trn(len(pages), "Remover 1 página?", "Remover {} páginas?"),
                         "Dá para voltar atrás com “Desfazer última alteração”, na tela do PDF.",
                         [("Cancelar", "cancel"), ("Remover", "destructive")])
             if idx != 1:
@@ -1782,10 +1791,12 @@ class PagePickerScreen(Screen):
             if app.attempt(lambda: lib.modify(item, lambda p: pdfops.remove(p, pages)), busy="Removendo…"):
                 app.back()
                 n = len(pages)
-                app.toast(f"{pages_text(n)} removida{'s' if n != 1 else ''}. Use “Desfazer” se precisar.")
+                app.toast(trn(n, "1 página removida. Use “Desfazer” se precisar.",
+                              "{} páginas removidas. Use “Desfazer” se precisar."))
         else:
             label = pdfops.format_ranges(pages)
-            name = f"{item.name} - págs. {label}" if len(label) <= 40 else f"{item.name} - {len(pages)} páginas"
+            name = (trf("{} - págs. {}", item.name, label) if len(label) <= 40
+                    else trf("{} - {} páginas", item.name, len(pages)))
             out = {}
 
             def run():
@@ -1796,7 +1807,7 @@ class PagePickerScreen(Screen):
                 app.back()
                 new = out.get("item")
                 if new:
-                    app.toast(f"Novo PDF: {new.name}", "Abrir", lambda: app.open_document(new.id))
+                    app.toast(trf("Novo PDF: {}", new.name), "Abrir", lambda: app.open_document(new.id))
 
 
 # --- Combinar ---------------------------------------------------------------------
@@ -1867,7 +1878,7 @@ class MergeScreen(Screen):
         self.list_card.lay.setSpacing(0)
         self.content.addWidget(self.list_card)
         self.content.addWidget(SectionTitle("Nome do novo PDF"))
-        self.name = QLineEdit("PDF combinado")
+        self.name = QLineEdit(tr("PDF combinado"))
         self.content.addWidget(self.name)
         self.button = PrimaryButton("Combinar", "purple")
         self.button.clicked.connect(self._merge)
@@ -1897,7 +1908,7 @@ class MergeScreen(Screen):
         add.clicked.connect(self._choose)
         lay.addWidget(add)
         total = sum(i.page_count or 0 for i in items)
-        self.header.setText(f"{len(items)} PDFS · {pages_text(total).upper()}" if items else "PDFS")
+        self.header.setText(f"{trf('{} PDFs', len(items))} · {pages_text(total)}".upper() if items else tr("PDFs").upper())
         self.button.setEnabled(len(items) >= 2)
 
     def move_item(self, id, delta):
@@ -1922,7 +1933,7 @@ class MergeScreen(Screen):
         items = self.items()
         if len(items) < 2:
             return
-        name = self.name.text().strip() or "PDF combinado"
+        name = self.name.text().strip() or tr("PDF combinado")
         folder = items[0].folder
         out = {}
 
@@ -1936,7 +1947,7 @@ class MergeScreen(Screen):
             self.refresh()
             new = out.get("item")
             if new:
-                self.app.toast(f"PDF combinado: {new.name}", "Abrir", lambda: self.app.open_document(new.id))
+                self.app.toast(trf("PDF combinado: {}", new.name), "Abrir", lambda: self.app.open_document(new.id))
 
 
 def _origins(app, exclude_folder=None):
@@ -1948,7 +1959,7 @@ def _origins(app, exclude_folder=None):
         out.append(("Sem pasta", ("folder", "")))
     for f in app.lib.folders:
         if f.path != exclude_folder:
-            out.append(("    " * f.path.count("/") + "Pasta " + f.name, ("folder", f.path)))
+            out.append((raw("    " * f.path.count("/") + trf("Pasta {}", f.name)), ("folder", f.path)))
     return out
 
 
@@ -1997,7 +2008,7 @@ def choose_documents(app, title, multiple=False, excluding=frozenset(), allow_im
 
     def update_ok():
         if ok is not None:
-            ok.setText(f"Adicionar ({len(selected)})" if selected else "Adicionar")
+            ok.setText(trf("Adicionar ({})", len(selected)) if selected else tr("Adicionar"))
             ok.setEnabled(bool(selected))
 
     def pool():
@@ -2137,7 +2148,8 @@ def cloud_dialog(app):
             if name in found:
                 card.lay.addWidget(Label(str(found[name]), 12, 400, "secondary"))
             else:
-                card.lay.addWidget(Label(f"Instale o {info['app']} e entre na sua conta.", 13, 400, "secondary"))
+                card.lay.addWidget(Label(trf("Instale o {} e entre na sua conta.", tr(info['app'])), 13, 400,
+                                         "secondary"))
             card.lay.addWidget(Label(info["iphone"], 13, 400, "secondary"))
             row = QHBoxLayout()
             signin = QPushButton("Entrar ou instalar…")
@@ -2148,7 +2160,7 @@ def cloud_dialog(app):
             signin.clicked.connect(lambda _c=False, n=name: open_cloud_signin(n))
             row.addWidget(signin)
             if name in found and name != current:
-                use = QPushButton(f"Usar o {name}")
+                use = QPushButton(trf("Usar o {}", name))
                 use.setCursor(Qt.PointingHandCursor)
                 use.setFont(font(14, 600))
                 use.setStyleSheet(f"QPushButton {{ background: {T.color('blue').name()}; border: none; "
@@ -2229,10 +2241,10 @@ class SettingsScreen(Screen):
         card = TileCard()
         if cloud:
             info = backup.cloud_app(cloud) or {}
-            card.lay.addLayout(status_row("check", "green", f"Backup e sincronização no {cloud}",
-                                          f"Os PDFs ficam numa pasta do {cloud}: tudo o que você salva aqui vai para a "
-                                          "nuvem e aparece nos outros aparelhos com o Prumo usando a mesma pasta. "
-                                          + info.get("iphone", "")))
+            card.lay.addLayout(status_row("check", "green", trf("Backup e sincronização no {}", cloud),
+                                          trf("Os PDFs ficam numa pasta do {}: tudo o que você salva aqui vai para a "
+                                              "nuvem e aparece nos outros aparelhos com o Prumo usando a mesma "
+                                              "pasta.", cloud) + " " + tr(info.get("iphone", ""))))
         else:
             card.lay.addLayout(status_row("warning", "orange", "Só neste computador",
                                           "Sem backup e sem sincronização: se o computador estragar ou for perdido, "
@@ -2258,11 +2270,11 @@ class SettingsScreen(Screen):
         card = TileCard()
         last = app.setting("last_backup", None)
         try:
-            last_text = f"Última cópia: {date_text(float(last))}." if last else "Nenhuma cópia feita ainda."
+            last_text = trf("Última cópia: {}.", date_text(float(last))) if last else tr("Nenhuma cópia feita ainda.")
         except (TypeError, ValueError):
-            last_text = "Nenhuma cópia feita ainda."
-        card.lay.addWidget(Label("Uma cópia completa (PDFs, pastas e favoritos) numa pasta comum, por exemplo num "
-                                 "pendrive ou HD externo. " + last_text, 13.5))
+            last_text = tr("Nenhuma cópia feita ainda.")
+        card.lay.addWidget(Label(tr("Uma cópia completa (PDFs, pastas e favoritos) numa pasta comum, por exemplo num "
+                                    "pendrive ou HD externo.") + " " + last_text, 13.5))
         row = QHBoxLayout()
         row.addWidget(small_button("Fazer uma cópia agora…", app.backup_now))
         row.addWidget(small_button("Restaurar de uma cópia…", app.restore_from))
@@ -2322,7 +2334,7 @@ class SettingsScreen(Screen):
         ui = QComboBox()
         ui.addItem("Automático (idioma do Windows)", "auto")
         for code, name in i18n.LANGUAGES:
-            ui.addItem(name, code)
+            ui.addItem(raw(name), code)          # cada idioma com o próprio nome
         ui.setCurrentIndex(max(0, ui.findData(app.setting("ui_language", "auto"))))
         card.lay.addWidget(ui)
         ui_note = Label("A mudança vale na próxima vez que você abrir o Prumo.", 13, 400, "secondary")
@@ -2332,7 +2344,7 @@ class SettingsScreen(Screen):
             app.set_setting("ui_language", ui.currentData())
             msg = "A mudança vale na próxima vez que você abrir o Prumo."
             if ui.currentData() in i18n.NEEDS_REVIEW:
-                msg += " A tradução para este idioma ainda precisa de revisão por quem o fala."
+                msg = "A mudança vale na próxima vez que você abrir o Prumo. A tradução para este idioma ainda precisa de revisão por quem o fala."
             ui_note.setText(msg)
         ui.currentIndexChanged.connect(ui_changed)
         c.addWidget(card)
@@ -2340,9 +2352,9 @@ class SettingsScreen(Screen):
         c.addWidget(SectionTitle("OCR"))
         card = TileCard()
         card.lay.addWidget(Label("Idiomas dos documentos", 16, 600))
-        card.lay.addWidget(Label("Marque até %d. Idiomas demais juntos deixam o OCR mais lento e menos preciso."
-                                 % ocr_langs.MAX_LANGS, 13, 400, "secondary"))
-        chosen = ocr_langs.parse(app.setting("ocr_language", "por"))
+        card.lay.addWidget(Label(trf("Marque até {}. Idiomas demais juntos deixam o OCR mais lento e menos preciso.",
+                                     ocr_langs.MAX_LANGS), 13, 400, "secondary"))
+        chosen = ocr_langs.parse(app.setting("ocr_language", "") or ocr_langs.default())
         boxes: dict[str, QCheckBox] = {}
 
         def lang_changed(_v=None):
@@ -2350,10 +2362,10 @@ class SettingsScreen(Screen):
             if len(codes) > ocr_langs.MAX_LANGS:
                 self.sender().setChecked(False)
                 return
-            app.set_setting("ocr_language", ocr_langs.join(codes or ["por"]))
+            app.set_setting("ocr_language", ocr_langs.join(codes or [ocr_langs.default()]))
 
         for code in ocr_langs.installed():
-            b = QCheckBox(ocr_langs.NAMES[code])
+            b = QCheckBox(raw(ocr_langs.NAMES[code]))   # cada idioma com o próprio nome
             b.setChecked(code in chosen)
             b.toggled.connect(lang_changed)
             boxes[code] = b
@@ -2406,6 +2418,6 @@ class SettingsScreen(Screen):
             card.lay.addLayout(row)
         import core
         card.lay.addWidget(Label("Desenvolvido por Color Software", 14, 600))
-        card.lay.addWidget(Label(f"Prumo PDF {core.APP_VERSION}", 12, 400, "secondary"))
+        card.lay.addWidget(Label(raw(f"Prumo PDF {core.APP_VERSION}"), 12, 400, "secondary"))
         c.addWidget(card)
         self.finish_content()

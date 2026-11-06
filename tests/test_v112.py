@@ -174,8 +174,8 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(i18n.tr("Sem OCR"), "Ohne OCR")
         self.assertEqual(i18n.tr("Página 2 de 7"), "Seite 2 von 7")
         self.assertEqual(i18n.tr("12 páginas"), "12 Seiten")
-        # sem tradução alemã: cai no inglês; sem inglês, fica em português
-        self.assertEqual(i18n.tr("Nenhum PDF sem OCR"), "No PDFs without OCR")
+        self.assertEqual(i18n.tr("Nenhum PDF sem OCR"), "Keine PDFs ohne OCR")
+        # texto fora do catálogo fica como está (o teste test_i18n garante que todo texto da interface tem tradução)
         self.assertEqual(i18n.tr("Texto que não existe no catálogo"), "Texto que não existe no catálogo")
         i18n.set_language("pt")
         self.assertEqual(i18n.tr("Salvar"), "Salvar")
@@ -259,7 +259,7 @@ class UiTests(unittest.TestCase):
 
     def test_version(self):
         import core
-        self.assertEqual(core.APP_VERSION, "1.12.1")
+        self.assertEqual(core.APP_VERSION, "1.13.0")
 
 
 if __name__ == "__main__":

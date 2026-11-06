@@ -164,7 +164,7 @@ def dewarp_pdf(src: Path, dest: Path, pages: list[int] | None = None, progress=N
     fixed_pages: dict[int, bytes] = {}
     for k, n in enumerate(chosen, 1):
         if progress:
-            progress(k, len(chosen), f"Página {n}")
+            progress(k, len(chosen), __import__("i18n").trf("Página {}", n))
         pil, (w_pt, h_pt) = render_page(src, n - 1, dpi)
         out = unwarp(pil)
         buf = io.BytesIO()

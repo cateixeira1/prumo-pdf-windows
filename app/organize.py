@@ -19,6 +19,7 @@ from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QKeySequence, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QSizePolicy, QWidget
 
+from i18n import tr, trf, trn
 from ios_kit import Label, Screen, TextButton, alert
 from ios_theme import MARGIN, SPACING, TILE_RADIUS, T, font, glyph_icon, paint_glyph
 
@@ -265,7 +266,7 @@ class PageGrid(QWidget):
         p.setFont(font(13, 600))
         label = str(i + 1)
         if page != i + 1:
-            label += f"  ·  era {page}"
+            label += "  ·  " + trf("era {}", page)
         p.drawText(QRectF(r.x(), r.bottom() - LABEL_H - 2, r.width(), LABEL_H), Qt.AlignCenter, label)
         if rot:
             p.setPen(T.color("secondary"))
@@ -478,7 +479,7 @@ class OrganizeBar(QWidget):
 
     def update_state(self, n_sel: int, total: int, can_undo: bool):
         self.label.setText("Arraste para mudar a ordem" if n_sel == 0
-                           else f"{n_sel} página{'s' if n_sel != 1 else ''} selecionada{'s' if n_sel != 1 else ''}")
+                           else trn(n_sel, "1 página selecionada", "{} páginas selecionadas"))
         enabled = {"view": total > 0, "left": n_sel > 0, "right": n_sel > 0, "delete": 0 < n_sel < total,
                    "undo": can_undo}
         for k, (b, glyph) in self.buttons.items():
@@ -520,11 +521,11 @@ class OrganizeScreen(Screen):
         self.save_btn = TextButton("Salvar", bold=True)
         self.save_btn.clicked.connect(lambda _checked=False: self.save())
         self.nav.right.addWidget(self.save_btn)
-        hint = Label(f"“{self.item.name}”. Arraste as páginas para mudar a ordem; perto do alto ou do pé da "
-                     "janela, a lista rola sozinha. Ctrl+clique seleciona várias, Shift+clique um trecho, e arrastar "
-                     "a partir de um espaço vazio desenha um retângulo de seleção. "
-                     "Ctrl+roda do mouse muda o tamanho. Para ler uma página, clique na lupa que aparece sobre ela "
-                     "(ou dê dois cliques, ou tecle Espaço).",
+        hint = Label(trf("“{}”. Arraste as páginas para mudar a ordem; perto do alto ou do pé da "
+                         "janela, a lista rola sozinha. Ctrl+clique seleciona várias, Shift+clique um trecho, e "
+                         "arrastar a partir de um espaço vazio desenha um retângulo de seleção. "
+                         "Ctrl+roda do mouse muda o tamanho. Para ler uma página, clique na lupa que aparece sobre "
+                         "ela (ou dê dois cliques, ou tecle Espaço).", self.item.name),
                      13, 400, "secondary")
         hint.setContentsMargins(4, 0, 4, 0)
         self.content.addWidget(hint)
@@ -575,7 +576,7 @@ class OrganizeScreen(Screen):
         self.bar.update_state(len(g.selected), n, bool(self.model.history))
         self.save_btn.setEnabled(self.model.changed)
         self.save_btn.update()
-        self.set_title(f"Organizar páginas · {n}" + (" · não salvo" if self.model.changed else ""))
+        self.set_title(f"{tr('Organizar páginas')} · {n}" + (" · " + tr("não salvo") if self.model.changed else ""))
         self.big_title.hide()
         self.bar.place()
         self.bar.raise_()
@@ -627,12 +628,13 @@ class OrganizeScreen(Screen):
 
         def label(k):
             page, rot = entries[k]
-            extra = (f" · era a {page}" if page != k + 1 else "") + (f" · girada {rot}°" if rot else "")
-            return f"Página {k + 1} de {n}{extra}"
+            extra = (" · " + trf("era a {}", page) if page != k + 1 else "") + \
+                (" · " + trf("girada {}°", rot) if rot else "")
+            return trf("Página {} de {}", k + 1, n) + extra
 
         def open_reader(page_index):
             self.app.push(ReaderScreen(self.app, self.item_id, start_page=page_index,
-                                       title_extra=f"página {page_index + 1}"))
+                                       title_extra=trf("página {}", page_index + 1)))
 
         ov = PagePreviewOverlay(self.app, self.item.path, [(p - 1, r) for p, r in entries], i, label,
                                 on_open_reader=None if self.model.changed else open_reader)

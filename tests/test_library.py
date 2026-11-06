@@ -128,7 +128,7 @@ class PdfOpsTests(Base):
         self.assertEqual(pdfops.SplitPlan(200, 4).sizes, [50, 50, 50, 50])
         self.assertEqual(pdfops.SplitPlan(10, 3).sizes, [4, 3, 3])
         self.assertEqual(pdfops.SplitPlan(10, 3).ranges, [(1, 4), (5, 7), (8, 10)])
-        self.assertEqual(pdfops.SplitPlan(10, 3).summary, "1 parte de 4 páginas e 2 de 3 páginas")
+        self.assertEqual(pdfops.SplitPlan(10, 3).summary, "1 parte de 4 páginas e 2 partes de 3 páginas")
 
     def test_split_extract_insert_arrange(self):
         src = digital_pdf(self.src / "D.pdf", 7)

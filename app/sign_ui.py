@@ -5,14 +5,18 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QVBoxLayout
 
+import i18n
 import signing
+from i18n import raw, tr, trf, trn
 from ios_kit import Label, PrimaryButton, SheetOverlay, TileCard, sheet_header
 
 WARNING = ("Depois de assinado, o PDF não pode mais ser alterado: qualquer mudança (destaque, corte, numeração, "
-           "páginas) invalida a assinatura. Por isso o Prumo assina uma cópia, “{name}”, e o original continua "
+           "páginas) invalida a assinatura. Por isso o Prumo assina uma cópia, “{}”, e o original continua "
            "como está, para você editar se precisar.")
-WARNING_AGAIN = ("Este PDF já tem {n}. A nova assinatura entra no próprio arquivo, sem mudar o conteúdo: as "
-                 "assinaturas anteriores continuam válidas. Depois, o PDF continua sem poder ser alterado.")
+WARNING_AGAIN_ONE = ("Este PDF já tem 1 assinatura. A nova assinatura entra no próprio arquivo, sem mudar o "
+                     "conteúdo: a assinatura anterior continua válida. Depois, o PDF continua sem poder ser alterado.")
+WARNING_AGAIN = ("Este PDF já tem {} assinaturas. A nova assinatura entra no próprio arquivo, sem mudar o conteúdo: "
+                 "as assinaturas anteriores continuam válidas. Depois, o PDF continua sem poder ser alterado.")
 
 
 def _busy(on: bool):
@@ -46,7 +50,7 @@ def add_a1_dialog(app):
     out = {}
     if app.attempt(lambda: out.setdefault("c", signing.import_a1(path, res[1])), busy="Conferindo o certificado…"):
         c = out["c"]
-        app.toast(f"Certificado adicionado: {c.name}" + (" (vencido)" if c.expired else ""))
+        app.toast(trf("Certificado adicionado: {} (vencido)" if c.expired else "Certificado adicionado: {}", raw(c.name)))
         return c
     return None
 
@@ -81,16 +85,15 @@ def sign_dialog(app, item):
     card.lay.setSpacing(8)
     card.lay.addWidget(Label(f"“{item.name}”", 15, 600))
     if count:
-        n = "1 assinatura" if count == 1 else f"{count} assinaturas"
-        card.lay.addWidget(Label(WARNING_AGAIN.format(n=n), 13, 500, "orange"))
+        card.lay.addWidget(Label(trn(count, WARNING_AGAIN_ONE, WARNING_AGAIN), 13, 500, "orange"))
     else:
-        card.lay.addWidget(Label(WARNING.format(name=signing.signed_name(item)), 13, 500, "orange"))
+        card.lay.addWidget(Label(trf(WARNING, signing.signed_name(item)), 13, 500, "orange"))
     card.lay.addWidget(Label("Certificado", 13, 600))
     combo = QComboBox()
     combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)   # o nome longo não alarga o painel
     combo.setMinimumContentsLength(12)
     for c in certs:
-        combo.addItem(c.label + (" · VENCIDO" if c.expired else ""), c.id)
+        combo.addItem(raw(c.label + (" · " + tr("VENCIDO") if c.expired else "")), c.id)
     card.lay.addWidget(combo)
     pw = QLineEdit()
     pw.setEchoMode(QLineEdit.Password)
@@ -120,13 +123,15 @@ def sign_dialog(app, item):
         level_combo.hide()
         known = signing.LEVELS.get(offered)
         level_note.setText(
-            "O nível de proteção foi definido pela primeira assinatura" +
-            (f" ({known[0].split(':')[0].lower()}) e não muda mais." if known else " e não muda mais."))
+            trf("O nível de proteção foi definido pela primeira assinatura ({}) e não muda mais.",
+                tr(known[0]).split(':')[0]) if known else
+            tr("O nível de proteção foi definido pela primeira assinatura e não muda mais."))
     else:
         level_combo.setCurrentIndex(max(0, level_combo.findData(offered)))
         if why == "fields":
-            level_note.setText(f"Este PDF tem {fields} campos de assinatura: o Prumo escolheu o nível 2, para os "
-                               "outros signatários ainda poderem assinar. Você pode mudar para o nível 1 ou 3.")
+            level_note.setText(trf("Este PDF tem {} campos de assinatura: o Prumo escolheu o nível 2, para os "
+                                   "outros signatários ainda poderem assinar. Você pode mudar para o nível 1 ou 3.",
+                                   fields))
     level_card.lay.addWidget(level_combo)
     level_card.lay.addWidget(level_text)
     level_card.lay.addWidget(level_note)
@@ -213,8 +218,9 @@ def sign_dialog(app, item):
     if why != "signed" and fields > 1 and level == 1:
         from app_window import alert
         idx = alert(app, "Nível 1 em PDF com vários campos de assinatura?",
-                    f"Este PDF tem {fields} campos de assinatura. No nível 1, depois da sua assinatura ninguém mais "
-                    "poderá assinar os outros campos sem invalidar a sua. Para os outros poderem assinar, use o nível 2.",
+                    trf("Este PDF tem {} campos de assinatura. No nível 1, depois da sua assinatura ninguém mais "
+                        "poderá assinar os outros campos sem invalidar a sua. Para os outros poderem assinar, use o "
+                        "nível 2.", fields),
                     [("Voltar", "cancel"), ("Assinar no nível 1", "destructive")])
         if idx != 1:
             return sign_dialog(app, item)
@@ -231,7 +237,7 @@ def sign_dialog(app, item):
         return None
     result = out.get("item")
     if result is not None:
-        app.toast(f"PDF assinado: {result.name}", "Abrir", lambda: app.read(result))
+        app.toast(trf("PDF assinado: {}", result.name), "Abrir", lambda: app.read(result))
     return result
 
 
@@ -245,10 +251,10 @@ def settings_section(app, c, SectionTitle, small_button):
             row = QHBoxLayout()
             col = QVBoxLayout()
             col.setSpacing(1)
-            col.addWidget(Label(cert.name, 15, 600))
-            col.addWidget(Label(f"A1 salvo no Prumo · emitido por {_issuer_cn(cert.issuer)} · válido até "
-                                f"{cert.not_after.astimezone().strftime('%d/%m/%Y')}"
-                                + (" · VENCIDO" if cert.expired else ""), 12.5, 400, "secondary"))
+            col.addWidget(Label(raw(cert.name), 15, 600))
+            col.addWidget(Label(raw(tr("A1 salvo no Prumo") + " · " + trf("emitido por {}", _issuer_cn(cert.issuer))
+                                    + " · " + trf("válido até {}", i18n.fmt_date(cert.not_after))
+                                    + (" · " + tr("VENCIDO") if cert.expired else "")), 12.5, 400, "secondary"))
             row.addLayout(col, 1)
             row.addWidget(small_button("Remover", lambda _c=False, x=cert: _remove(app, x), "red"))
             card.lay.addLayout(row)
@@ -315,12 +321,12 @@ def _scan_windows(app):
         return
     found = out.get("c") or []
     if found:
-        lines = "\n".join(f"• {c.name} · {c.issuer.split('CN=')[-1].split(',')[0]} · válido até "
-                          f"{c.not_after.astimezone().strftime('%d/%m/%Y')}" + (" · VENCIDO" if c.expired else "")
-                          for c in found)
+        lines = "\n".join(f"• {c.name} · {c.issuer.split('CN=')[-1].split(',')[0]} · "
+                          + trf("válido até {}", i18n.fmt_date(c.not_after))
+                          + (" · " + tr("VENCIDO") if c.expired else "") for c in found)
         alert(app, "Certificados encontrados no Windows",
-              lines + "\n\nEles aparecem na tela de assinar. Se o certificado do token for um deles, o Prumo "
-                      "fala com o token na hora da assinatura e o programa do token pede o PIN.",
+              raw(lines + "\n\n" + tr("Eles aparecem na tela de assinar. Se o certificado do token for um deles, o "
+                                       "Prumo fala com o token na hora da assinatura e o programa do token pede o PIN.")),
               [("OK", "default")])
     else:
         alert(app, "Nenhum certificado encontrado",
@@ -353,8 +359,8 @@ def _issuer_cn(issuer: str) -> str:
 def _remove(app, cert):
     from app_window import alert
     idx = alert(app, "Remover o certificado?",
-                f"O certificado de {cert.name} sai do Prumo. O arquivo original (.pfx) que você tem continua onde "
-                "estava, e os PDFs já assinados continuam válidos.",
+                trf("O certificado de {} sai do Prumo. O arquivo original (.pfx) que você tem continua onde "
+                    "estava, e os PDFs já assinados continuam válidos.", cert.name),
                 [("Cancelar", "cancel"), ("Remover", "destructive")])
     if idx == 1 and app.attempt(lambda: signing.remove_certificate(cert)):
         app.toast("Certificado removido do Prumo.")

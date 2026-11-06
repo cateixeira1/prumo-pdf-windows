@@ -6,3 +6,4 @@ tessdata/
 tessdata_best/
 .venv/
 tessdata_full/
+tools/i18n_missing.json

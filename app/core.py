@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "Prumo PDF"
-APP_VERSION = "1.12.1"
+APP_VERSION = "1.13.0"
 
 # --- Critérios de classificação de página -----------------------------------
 # São heurísticas, não regras exatas. Ficam aqui para serem ajustadas com
@@ -249,7 +249,7 @@ def open_error_message(exc: Exception) -> str:
         return "O PDF está protegido por senha. Remova a senha antes de usar."
     if "format" in msg or "data" in msg:
         return "O arquivo está corrompido ou não é um PDF válido."
-    return f"Não foi possível abrir o PDF ({exc})."
+    return __import__("i18n").trf("Não foi possível abrir o PDF ({}).", exc)
 
 
 def analyze_pdf(path: str | Path) -> DocInfo:
@@ -319,40 +319,46 @@ def extract_text(path: str | Path) -> list[str]:
 
 # --- Seleção de páginas -------------------------------------------------------
 
-_RANGE_RE = re.compile(r"^(\d+)\s*-\s*(\d+|fim|end)$", re.IGNORECASE)
+_RANGE_RE = re.compile(r"^(\d+)\s*-\s*(\d+|[^\W\d_]+)$")
+
+
+def _end_words() -> set[str]:
+    """Palavras aceitas para "última página": fim, end e a palavra do idioma do app (Ende, fin, slutt...)."""
+    import i18n
+    return {"fim", "end", i18n.tr("fim").casefold()}
 
 
 def parse_page_selection(spec: str, total_pages: int) -> list[int]:
     """
-    '1, 3-5, 8' -> [1, 3, 4, 5, 8]. Aceita 'fim' como última página ('10-fim').
-    Também aceita ';' como separador. Lança ValueError com mensagem em português.
+    '1, 3-5, 8' -> [1, 3, 4, 5, 8]. Aceita 'fim' (ou 'end', ou a palavra do idioma do app) como última
+    página ('10-fim'). Também aceita ';' como separador. Lança ValueError com a mensagem no idioma do app.
     """
+    from i18n import trf, trn
+    ends = _end_words()
     pages: set[int] = set()
     parts = [p.strip() for p in re.split(r"[;,]", spec) if p.strip()]
     if not parts:
-        raise ValueError("Informe ao menos uma página.")
+        raise ValueError(trf("Informe ao menos uma página."))
     for part in parts:
-        low = part.lower()
-        if low in ("fim", "end"):
+        low = part.casefold()
+        if low in ends:
             pages.add(total_pages)
             continue
         m = _RANGE_RE.match(part)
-        if m:
+        if m and (m.group(2).isdigit() or m.group(2).casefold() in ends):
             start = int(m.group(1))
-            end = total_pages if m.group(2).lower() in ("fim", "end") else int(m.group(2))
+            end = int(m.group(2)) if m.group(2).isdigit() else total_pages
             if start > end:
-                raise ValueError(f"Intervalo invertido: {part}")
+                raise ValueError(trf("Intervalo invertido: {}", part))
             pages.update(range(start, end + 1))
         elif part.isdigit():
             pages.add(int(part))
         else:
-            raise ValueError(f"Não entendi '{part}'. Use algo como 1, 3-5, 8.")
+            raise ValueError(trf("Não entendi '{}'. Use algo como 1, 3-5, 8.", part))
     bad = sorted(p for p in pages if p < 1 or p > total_pages)
     if bad:
-        raise ValueError(
-            f"O documento tem {total_pages} página(s); fora do intervalo: "
-            f"{format_ranges(bad)}"
-        )
+        raise ValueError(trf("O documento tem {}; fora do intervalo: {}",
+                             trn(total_pages, "1 página", "{} páginas"), format_ranges(bad)))
     return sorted(pages)
 
 
@@ -411,7 +417,7 @@ def extract_pages(input_path: str | Path, output: str | Path, pages: list[int]) 
         n = len(src.pages)
         bad = [p for p in pages if p < 1 or p > n]
         if bad:
-            raise ValueError(f"Páginas inexistentes: {format_ranges(bad)}")
+            raise ValueError(__import__("i18n").trf("Páginas inexistentes: {}", format_ranges(bad)))
         with pikepdf.new() as dst:
             for p in pages:
                 dst.pages.append(src.pages[p - 1])

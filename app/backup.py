@@ -128,7 +128,8 @@ def merge_move(old_root: Path, library) -> tuple[int, int]:
             continue
         if find_same_file(p, library) is None:
             from pdfops import UserError
-            raise UserError(f"“{p.name}” não chegou à nova pasta. Nada foi apagado da pasta antiga.")
+            raise UserError(__import__("i18n").trf("“{}” não chegou à nova pasta. Nada foi apagado da pasta antiga.",
+                                                   p.name))
     for p in sorted(old_root.rglob("*.pdf")):
         if META_DIR not in p.relative_to(old_root).parts:
             p.unlink()
@@ -172,7 +173,7 @@ def make_copy(library_root: Path, dest_dir: Path) -> tuple[Path, int]:
             raise UserError("Escolha um lugar fora da pasta da biblioteca (por exemplo, um pendrive).")
     except OSError:
         pass
-    name = time.strftime("Prumo PDF - cópia %Y-%m-%d %Hh%M")
+    name = __import__("i18n").trf("Prumo PDF - cópia {}", time.strftime("%Y-%m-%d %Hh%M"))
     target = dest_dir / name
     n = 2
     while target.exists():

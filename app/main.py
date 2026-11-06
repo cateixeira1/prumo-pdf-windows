@@ -324,6 +324,7 @@ def run_gui(files: list[str]) -> int:
     import i18n
     i18n.set_language(str(settings.value("ui_language", "auto")))
     i18n.install_hooks()
+    i18n.install_qt_translator(app)
     mark("idioma")
     w = MainWindow(settings)
     mark("cria janela")
@@ -379,6 +380,7 @@ def run_demo(args: list[str]) -> int:
     import i18n
     i18n.set_language(arg("--lang", "pt"))
     i18n.install_hooks()
+    i18n.install_qt_translator(app)
     from library import Library
 
     w = MainWindow(settings, Library(root, local_dir=root.parent / (root.name + "_local")))
@@ -427,8 +429,16 @@ def self_test(report_file: str) -> int:
         import machine
         m = machine.current()
         result["machine"] = m.describe()
+        import i18n
+        i18n.set_language("de")
+        from PySide6.QtWidgets import QApplication
+        _qa = QApplication.instance() or QApplication([])
+        result["qt_translations"] = i18n.install_qt_translator(_qa)
+        result["locales"] = {c: len(i18n.load_catalog(c)) for c in i18n.CODES[1:]}
+        i18n.set_language("pt")
         result["ocr_jobs"] = machine.ocr_jobs(False, m)
-        result["ok"] = bool(result["tessdata"]) and bool(result["icon"]) and result["heic"] is True and result["dewarp"]
+        result["ok"] = (bool(result["tessdata"]) and bool(result["icon"]) and result["heic"] is True and result["dewarp"]
+                        and result["qt_translations"] and min(result["locales"].values()) > 0)
     except Exception as exc:
         result["ok"] = False
         result["error"] = repr(exc)

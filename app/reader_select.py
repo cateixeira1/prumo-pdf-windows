@@ -42,8 +42,9 @@ class _Dot(QAbstractButton):
     def __init__(self, key: str, label: str):
         super().__init__()
         self.key = key
-        self.setToolTip(f"Destacar em {label.lower()}")
-        self.setAccessibleName(f"Destacar em {label.lower()}")
+        import annotations
+        self.setToolTip(annotations.COLOR_TIPS.get(key, label))
+        self.setAccessibleName(annotations.COLOR_TIPS.get(key, label))
         self.setFixedSize(32, 32)
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover)

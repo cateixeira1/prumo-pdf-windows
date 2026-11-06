@@ -35,7 +35,7 @@ def _open(path: str | Path):
     except pikepdf.PasswordError:
         raise UserError("O PDF está protegido por senha.") from None
     except pikepdf.PdfError as exc:
-        raise UserError(f"Não foi possível abrir o PDF ({exc}).") from None
+        raise UserError(__import__("i18n").trf("Não foi possível abrir o PDF ({}).", exc)) from None
 
 
 def page_count(path: str | Path) -> int:
@@ -72,13 +72,16 @@ class SplitPlan:
         sizes = self.sizes
         if not sizes:
             return ""
+        from i18n import trf, trn
+
+        def pages(k):
+            return trn(k, "1 página", "{} páginas")
         if len(set(sizes)) == 1:
-            n = sizes[0]
-            return f"{self.parts} partes de {n} página{'s' if n != 1 else ''}"
+            return trn(self.parts, "1 parte de {}", "{} partes de {}", pages(sizes[0]))
         big, small = max(sizes), min(sizes)
         nb = sizes.count(big)
-        return (f"{nb} parte{'s' if nb != 1 else ''} de {big} páginas e "
-                f"{self.parts - nb} de {small} página{'s' if small != 1 else ''}")
+        return trf("{} e {}", trn(nb, "1 parte de {}", "{} partes de {}", pages(big)),
+                   trn(self.parts - nb, "1 parte de {}", "{} partes de {}", pages(small)))
 
 
 def split(src: str | Path, parts: int, dest_for_part) -> list[Path]:
@@ -88,8 +91,9 @@ def split(src: str | Path, parts: int, dest_for_part) -> list[Path]:
         if parts < 2:
             raise UserError("Escolha pelo menos 2 partes.")
         if parts > total:
-            raise UserError(f"O PDF tem {total} página{'s' if total != 1 else ''}; "
-                            f"não dá para dividir em {parts} partes.")
+            from i18n import trf, trn
+            raise UserError(trf("O PDF tem {}; não dá para dividir em {} partes.",
+                                trn(total, "1 página", "{} páginas"), parts))
         import pikepdf
 
         outs = []
@@ -115,7 +119,7 @@ def extract(src: str | Path, dest: str | Path, pages: list[int]) -> int:
         n = len(pdf.pages)
         bad = [p for p in pages if p < 1 or p > n]
         if bad:
-            raise UserError(f"Páginas inexistentes: {format_ranges(bad)}")
+            raise UserError(__import__("i18n").trf("Páginas inexistentes: {}", format_ranges(bad)))
         with pikepdf.new() as dst:
             for p in pages:
                 dst.pages.append(pdf.pages[p - 1])
@@ -180,7 +184,7 @@ def arrange(path: str | Path, entries: list[tuple[int, int]]) -> None:
         with pikepdf.new() as out:
             for page_no, rot in entries:
                 if not 1 <= page_no <= n:
-                    raise UserError(f"Página inexistente: {page_no}")
+                    raise UserError(__import__("i18n").trf("Página inexistente: {}", page_no))
                 out.pages.append(pdf.pages[page_no - 1])
                 if rot % 360:
                     out.pages[-1].rotate(rot % 360, relative=True)
@@ -362,12 +366,13 @@ def crop_and_rotate(path: str | Path, pages: list[int], margins=None, rotate_by:
 
 # --- Numerar páginas --------------------------------------------------------------------------------
 
+# (exemplo, modelo). Os modelos com palavra ("Página {}") saem no idioma dos textos gravados no PDF.
 NUMBER_FORMATS = {
-    "n": ("1", "{n}"),
-    "pagina": ("Página 1", "Página {n}"),
-    "pagina_de": ("Página 1 de 12", "Página {n} de {total}"),
-    "barra": ("1/12", "{n}/{total}"),
-    "tracos": ("- 1 -", "- {n} -"),
+    "n": ("1", "{}"),
+    "pagina": ("Página 1", "Página {}"),
+    "pagina_de": ("Página 1 de 12", "Página {} de {}"),
+    "barra": ("1/12", "{}/{}"),
+    "tracos": ("- 1 -", "- {} -"),
 }
 NUMBER_POSITIONS = {
     "bottom_center": "Embaixo, no centro",
@@ -383,11 +388,23 @@ _HELV = {" ": 278, "/": 278, "-": 333, "P": 667, "i": 222, "á": 556, "a": 556, 
 
 
 def number_text(fmt: str, n: int, total: int) -> str:
-    return NUMBER_FORMATS.get(fmt, NUMBER_FORMATS["n"])[1].format(n=n, total=total)
+    import i18n
+    template = NUMBER_FORMATS.get(fmt, NUMBER_FORMATS["n"])[1]
+    return i18n.trf_in(i18n.doc_language(), template, n, total)
+
+
+def number_example(fmt: str) -> str:
+    """Exemplo do formato para a lista ("Página 1 de 12" no idioma dos textos gravados no PDF)."""
+    return number_text(fmt, 1, 12)
 
 
 def _text_width(text: str, size: float) -> float:
-    return sum(_HELV.get(ch, 556) for ch in text) * size / 1000.0
+    try:
+        from fpdf.fonts import CORE_FONTS_CHARWIDTHS
+        widths = CORE_FONTS_CHARWIDTHS["helvetica"]
+    except Exception:  # noqa: BLE001
+        widths = _HELV
+    return sum(widths.get(ch, 556) for ch in text) * size / 1000.0
 
 
 def _pdf_string(text: str) -> bytes:

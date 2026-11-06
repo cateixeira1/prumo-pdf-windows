@@ -49,7 +49,7 @@ class PagePreviewOverlay(QWidget):
         except Exception:  # noqa: BLE001 - sem tamanhos, usa A4 até a imagem chegar
             self.sizes = []
         self.index = max(0, min(len(self.pages) - 1, start))
-        self.label = label or (lambda i: f"Página {i + 1} de {len(self.pages)}")
+        self.label = label or (lambda i: __import__("i18n").trf("Página {} de {}", i + 1, len(self.pages)))
         self.on_open_reader = on_open_reader
         self.zoom = 1.0
         self.offset = QPointF(0, 0)
@@ -207,7 +207,7 @@ class PagePreviewOverlay(QWidget):
             p.setPen(QColor(255, 255, 255, 180))
             p.setFont(font(12, 600))
             p.drawText(QRectF(0, self.height() - 34, self.width(), 24), Qt.AlignCenter,
-                       f"{round(self.zoom * 100)}% · arraste para mover")
+                       f"{round(self.zoom * 100)}% · " + __import__("i18n").tr("arraste para mover"))
 
     # --- mouse e teclado ---
     def mousePressEvent(self, e):

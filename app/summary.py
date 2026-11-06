@@ -17,32 +17,46 @@ import time
 import unicodedata
 from pathlib import Path
 
-SUFFIX = " - resumo"
+SUFFIX = " - resumo"           # em português; o nome novo usa o idioma do app ("Nome - summary" em inglês)
+NAME_TEMPLATE = "{} - resumo"
 STORE_DIR = ("." + "prumo", "resumos")
 
 
 def summary_name(item) -> str:
-    return f"{item.name}{SUFFIX}"
+    import i18n
+    return i18n.trf(NAME_TEMPLATE, item.name)
 
 
-def summary_rel(item) -> str:
-    name = f"{summary_name(item)}.pdf"
-    return f"{item.folder}/{name}" if item.folder else name
+def _rel(item, name: str) -> str:
+    return f"{item.folder}/{name}.pdf" if item.folder else f"{name}.pdf"
+
+
+def summary_rel(item, lib=None) -> str:
+    """Caminho do resumo: o que já existe (em qualquer idioma) ou o nome novo no idioma do app."""
+    found = find_summary(lib, item) if lib is not None else None
+    return found.rel if found is not None else _rel(item, summary_name(item))
 
 
 def find_summary(lib, item):
-    """O resumo deste PDF, se já existir na mesma pasta."""
-    return lib.item_by_path(summary_rel(item))
+    """O resumo deste PDF, se já existir na mesma pasta (com o nome em qualquer idioma do app)."""
+    import i18n
+    for name in i18n.suffixed_names(item.name, NAME_TEMPLATE):
+        found = lib.item_by_path(_rel(item, name))
+        if found is not None:
+            return found
+    return None
 
 
-def pages_label(pages: list[int]) -> str:
+def pages_label(pages: list[int], lang: str | None = None) -> str:
     """[10] → "Trecho extraído da página 10"; [10, 11] → "Trecho extraído das páginas 10-11"."""
+    import i18n
+    lang = lang or i18n.doc_language()
     pages = sorted(set(int(p) for p in pages))
     if not pages:
-        return "Trecho extraído"
+        return i18n.tr_in(lang, "Trecho extraído")
     if pages[0] == pages[-1]:
-        return f"Trecho extraído da página {pages[0]}"
-    return f"Trecho extraído das páginas {pages[0]}-{pages[-1]}"
+        return i18n.trf_in(lang, "Trecho extraído da página {}", pages[0])
+    return i18n.trf_in(lang, "Trecho extraído das páginas {}-{}", pages[0], pages[-1])
 
 
 def file_signature(path) -> str:
@@ -80,7 +94,9 @@ def build_pdf(dest, source_name: str, excerpts: list[dict], header: bool = True)
 
     from fpdf.enums import XPos, YPos
 
-    pdf, family = _new_pdf(f"Resumo de {source_name}")
+    import i18n
+    lang = i18n.doc_language()
+    pdf, family = _new_pdf(i18n.trf_in(lang, "Resumo de {}", source_name))
     safe = lambda t: _latin1_safe(t, family)   # noqa: E731
 
     def write(height, text):
@@ -90,10 +106,10 @@ def build_pdf(dest, source_name: str, excerpts: list[dict], header: bool = True)
     if header:
         pdf.set_font(family, "B" if family == "Texto" else "", 16)
         pdf.set_text_color(40, 40, 40)
-        write(8, f"Resumo de “{source_name}”")
+        write(8, i18n.trf_in(lang, "Resumo de “{}”", source_name))
         pdf.set_font(family, "", 9.5)
         pdf.set_text_color(120, 120, 120)
-        write(5, "Trechos selecionados no Prumo PDF, na ordem em que foram adicionados.")
+        write(5, i18n.tr_in(lang, "Trechos selecionados no Prumo PDF, na ordem em que foram adicionados."))
         pdf.ln(4)
         y = pdf.get_y()
         pdf.set_draw_color(200, 200, 200)
@@ -115,7 +131,7 @@ def build_pdf(dest, source_name: str, excerpts: list[dict], header: bool = True)
         pdf.ln(1)
         pdf.set_font(family, "I" if family == "Texto" else "", 9)
         pdf.set_text_color(115, 115, 115)
-        write(5, pages_label(ex.get("pages", [])))
+        write(5, pages_label(ex.get("pages", []), lang))
         pdf.ln(7)
     pdf.output(str(dest))
     return pdf.page_no()
@@ -153,7 +169,7 @@ def add_excerpts(lib, item, new: list) -> object:
            for pages, text in new if text and text.strip()]
     if not new:
         raise UserError("Selecione um trecho com texto para adicionar ao resumo.")
-    rel = summary_rel(item)
+    rel = summary_rel(item, lib)
     current = lib.item_by_path(rel)
     store = load_store(lib, rel) if current is not None else None
     if current is not None and store is not None and store.get("signature") == file_signature(current.path):
