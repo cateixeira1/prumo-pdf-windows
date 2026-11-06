@@ -1,0 +1,6 @@
+﻿commit=32f79c80a0ce1ee9529eaae802ed7e46815f66d7
+build=success
+test=success
+screenshots=success
+setup=PrumoPDF_Setup_1.14.0.exe
+done=2026-11-06T20:09:23.5162095+00:00

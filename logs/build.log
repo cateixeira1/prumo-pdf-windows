@@ -1,0 +1,93 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20261106200003
+Username: runnervmm7ud1\runneradmin
+RunAs User: runnervmm7ud1\runneradmin
+Configuration Name: 
+Machine: runnervmm7ud1 (Microsoft Windows NT 10.0.26100.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.EXE -command . 'D:\a\_temp\e901622f-5c2e-4e10-9b3a-c3911585547b.ps1'
+Process ID: 5916
+PSVersion: 5.1.26100.33648
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.33648
+BuildVersion: 10.0.26100.33648
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+==> Verificando o uv (gerenciador de Python)
+Instalando o uv...
+
+uv 0.13.7 (316c827e0 2026-11-03 x86_64-pc-windows-msvc)
+
+==> Preparando o ambiente Python 3.12 (pode levar alguns minutos na primeira vez)
+
+
+
+==> Baixando os modelos de idioma do Tesseract
+  tessdata/por.traineddata
+  tessdata/eng.traineddata
+  tessdata/osd.traineddata
+  tessdata/deu.traineddata
+  tessdata/spa.traineddata
+  tessdata/fra.traineddata
+  tessdata/jpn.traineddata
+  tessdata/chi_sim.traineddata
+  tessdata/chi_tra.traineddata
+  tessdata/nor.traineddata
+  tessdata/swe.traineddata
+  tessdata/dan.traineddata
+  tessdata/fin.traineddata
+  tessdata_best/por.traineddata
+  tessdata_best/eng.traineddata
+
+==> Enxugando os modelos de idioma (tira só o motor antigo, sem mexer no LSTM)
+
+
+==> Empacotando o aplicativo
+
+
+==> Conferindo o pacote
+{
+  "ocrmypdf": "17.13.0",
+  "tessdata": "D:\\a\\prumo-pdf-windows\\prumo-pdf-windows\\dist\\PrumoPDF\\_internal\\tessdata",
+  "tessdata_best": "D:\\a\\prumo-pdf-windows\\prumo-pdf-windows\\dist\\PrumoPDF\\_internal\\tessdata_best",
+  "tesseract": null,
+  "heic": true,
+  "icon": "D:\\a\\prumo-pdf-windows\\prumo-pdf-windows\\dist\\PrumoPDF\\_internal\\assets\\PrumoPDF.ico",
+  "dewarp": true,
+  "version": "1.14.0",
+  "machine": "2 nÃºcleos, 4 processadores lÃ³gicos, 16 GB de memÃ³ria (13.0 GB livres), na tomada",
+  "qt_translations": true,
+  "locales": {
+    "en": 875,
+    "es": 875,
+    "fr": 875,
+    "de": 875,
+    "ja": 875,
+    "zh-CN": 875,
+    "zh-TW": 875,
+    "nb": 875,
+    "sv": 875,
+    "da": 875,
+    "fi": 875
+  },
+  "ocr_jobs": 3,
+  "ok": true
+}
+
+==> Baixando o instalador oficial do Tesseract (UB Mannheim)
+  tesseract-ocr-w64-setup-5.4.0.20240606.exe
+
+==> Gerando o instalador
+
+
+PRONTO! Instalador gerado:
+  D:\a\prumo-pdf-windows\prumo-pdf-windows\dist\PrumoPDF_Setup_1.14.0.exe
+Dê dois cliques nele para instalar o Prumo PDF.
+**********************
+Windows PowerShell transcript end
+End time: 20261106200434
+**********************
