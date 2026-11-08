@@ -329,7 +329,8 @@ def office_app_for(path: Path) -> str | None:
 
 
 def find_libreoffice() -> Path | None:
-    found = shutil.which("soffice") or shutil.which("libreoffice")
+    import winsys
+    found = winsys.which("soffice") or winsys.which("libreoffice")
     if found:
         return Path(found)
     for base in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):
@@ -340,11 +341,19 @@ def find_libreoffice() -> Path | None:
     return None
 
 
+# Quando o Office é aberto por automação, as macros começam LIGADAS (AutomationSecurity "Low", documentação
+# da Microsoft). Um .doc ou .xls com macro, convertido aqui, executaria código. Por isso cada script desliga
+# todas as macros (msoAutomationSecurityForceDisable = 3) antes de abrir o arquivo, e o Excel também desliga
+# os eventos. Se o Office não aceitar a trava, o script para sem abrir o arquivo.
+MACROS_OFF = 3
+
 _PS = {
     "Word.Application": r"""
 $app = New-Object -ComObject Word.Application
-$app.Visible = $false; $app.DisplayAlerts = 0
 try {{
+  $app.AutomationSecurity = 3
+  if ($app.AutomationSecurity -ne 3) {{ throw 'macro-lock' }}
+  $app.Visible = $false; $app.DisplayAlerts = 0
   $d = $app.Documents.Open('{src}', $false, $true, $false)
   $d.ExportAsFixedFormat('{dst}', 17)
   $d.Close([ref]0)
@@ -352,8 +361,11 @@ try {{
 """,
     "Excel.Application": r"""
 $app = New-Object -ComObject Excel.Application
-$app.Visible = $false; $app.DisplayAlerts = $false
 try {{
+  $app.AutomationSecurity = 3
+  if ($app.AutomationSecurity -ne 3) {{ throw 'macro-lock' }}
+  $app.EnableEvents = $false
+  $app.Visible = $false; $app.DisplayAlerts = $false
   $b = $app.Workbooks.Open('{src}', 0, $true)
   $b.ExportAsFixedFormat(0, '{dst}')
   $b.Close($false)
@@ -362,6 +374,8 @@ try {{
     "PowerPoint.Application": r"""
 $app = New-Object -ComObject PowerPoint.Application
 try {{
+  $app.AutomationSecurity = 3
+  if ($app.AutomationSecurity -ne 3) {{ throw 'macro-lock' }}
   $p = $app.Presentations.Open('{src}', -1, 0, 0)
   $p.SaveAs('{dst}', 32)
   $p.Close()
@@ -375,19 +389,47 @@ def office_to_pdf(progid: str, src: Path, dest: Path, timeout=180) -> None:
     q = lambda p: str(p).replace("'", "''")  # noqa: E731
     script = _PS[progid].format(src=q(src.resolve()), dst=q(dest.resolve()))
     flags = 0x08000000 if sys.platform == "win32" else 0   # sem janela de console
-    proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    import winsys
+    proc = subprocess.run([winsys.powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                            "-Command", script], capture_output=True, text=True, timeout=timeout,
                           creationflags=flags)
     if proc.returncode != 0 or not dest.exists():
         msg = (proc.stderr or proc.stdout or "").strip().splitlines()
         from i18n import tr, trf
+        if "macro-lock" in (proc.stderr or "") + (proc.stdout or ""):
+            raise UserError(tr("O Office não deixou desligar as macros, então o arquivo não foi aberto. "
+                               "Converta pelo LibreOffice ou salve como PDF no próprio Office."))
         raise UserError(trf("O Office não conseguiu converter o arquivo: {}", msg[-1]) if msg
                         else tr("O Office não conseguiu converter o arquivo."))
 
 
+# Perfil novo do LibreOffice a cada conversão, com as macros desligadas: segurança "Muito alta" (só macros
+# de locais confiáveis, e o perfil não tem nenhum) e execução de macros desativada.
+LO_NO_MACROS = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" \
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" \
+oor:op="fuse"><value>3</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" \
+oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="SecureURL" \
+oor:op="fuse"><value/></prop></item>
+</oor:items>
+"""
+
+
+def libreoffice_profile() -> Path:
+    """Perfil temporário do LibreOffice já com as macros desligadas."""
+    profile = Path(tempfile.mkdtemp(prefix="prumo_lo_profile_"))
+    user = profile / "user"
+    user.mkdir(parents=True, exist_ok=True)
+    (user / "registrymodifications.xcu").write_text(LO_NO_MACROS, encoding="utf-8")
+    return profile
+
+
 def libreoffice_to_pdf(soffice: Path, src: Path, dest: Path, timeout=240) -> None:
     out = Path(tempfile.mkdtemp(prefix="prumo_lo_"))
-    profile = Path(tempfile.mkdtemp(prefix="prumo_lo_profile_"))
+    profile = libreoffice_profile()
     try:
         flags = 0x08000000 if sys.platform == "win32" else 0
         subprocess.run([str(soffice), f"-env:UserInstallation={profile.as_uri()}", "--headless",

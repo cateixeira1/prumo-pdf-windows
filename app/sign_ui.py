@@ -34,6 +34,21 @@ def load_certificates(app) -> list:
         _busy(False)
 
 
+def _hwnd(app) -> int | None:
+    try:
+        return int(app.winId())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+ADD_A1_TEXT = ("Digite a senha do arquivo do certificado. O Prumo entrega o certificado ao Windows com a chave "
+               "protegida: ela não pode ser copiada para fora deste computador (com chip TPM, fica dentro do chip). "
+               "Em seguida, o Windows pede para você criar uma senha para usar a chave; ela será pedida a cada "
+               "assinatura. O Prumo não guarda o arquivo nem as senhas.")
+ADD_A1_TEXT_FILE = ("Digite a senha do arquivo do certificado. O Prumo só confere a senha agora; ela não fica gravada e "
+                    "será pedida a cada assinatura.")
+
+
 def add_a1_dialog(app):
     """Escolhe o arquivo .pfx/.p12, confere a senha e guarda o certificado para assinar depois."""
     from app_window import alert
@@ -41,18 +56,44 @@ def add_a1_dialog(app):
                                            "Certificado A1 (*.pfx *.p12);;Todos os arquivos (*)")
     if not path:
         return None
-    res = alert(app, "Senha do certificado",
-                "Digite a senha do arquivo do certificado. O Prumo só confere a senha agora; ela não fica gravada e "
-                "será pedida a cada assinatura.",
+    windows = signing.store_mode() == "windows"
+    res = alert(app, "Senha do certificado", ADD_A1_TEXT if windows else ADD_A1_TEXT_FILE,
                 [("Cancelar", "cancel"), ("Adicionar", "default")], text="", secret=True)
     if not res or res[0] != 1:
         return None
     out = {}
-    if app.attempt(lambda: out.setdefault("c", signing.import_a1(path, res[1])), busy="Conferindo o certificado…"):
+    if app.attempt(lambda: out.setdefault("c", signing.import_a1(path, res[1], _hwnd(app))),
+                   busy="Conferindo o certificado…"):
         c = out["c"]
         app.toast(trf("Certificado adicionado: {} (vencido)" if c.expired else "Certificado adicionado: {}", raw(c.name)))
+        if windows:
+            _explain_storage(app, c, path)
         return c
     return None
+
+
+def storage_text(c) -> str:
+    """Onde a chave ficou e como ela está protegida (texto para o usuário)."""
+    if c.store != "prumo":
+        return ""
+    where = tr("A chave está no chip de segurança (TPM) deste computador e não pode sair dele."
+               if c.hardware else
+               "A chave está guardada pelo Windows, marcada para não poder ser copiada. Este computador não tem "
+               "chip TPM disponível, que daria uma proteção ainda maior.")
+    how = tr("O Windows pede a senha da chave a cada assinatura." if c.protected else
+             "O Windows não aceitou pedir uma senha a cada uso desta chave: ela não pode ser copiada, mas um "
+             "programa aberto nesta conta do Windows conseguiria usá-la sem senha.")
+    return raw(where + " " + how)
+
+
+def _explain_storage(app, c, pfx_path):
+    from app_window import alert
+    alert(app, "Certificado guardado no Windows",
+          raw(storage_text(c) + "\n\n" + trf(
+              "O arquivo original continua em “{}”. Ele é a cópia mais exposta do seu certificado: guarde-o fora do "
+              "computador (num pendrive, por exemplo) e apague-o daqui. É com ele que você instala o certificado em "
+              "outro computador.", raw(pfx_path))),
+          [("OK", "default")])
 
 
 def sign_dialog(app, item):
@@ -102,6 +143,8 @@ def sign_dialog(app, item):
     pin_note = Label("Certificado do Windows (A3 em token ou cartão, ou A1 instalado): o Prumo não guarda nada dele. "
                      "Na hora de assinar, o Windows liga o token e o programa do token pede o PIN.", 12, 400, "secondary")
     card.lay.addWidget(pin_note)
+    prumo_note = Label("", 12, 400, "secondary")
+    card.lay.addWidget(prumo_note)
     more = Label("", 12, 500, "red")
     card.lay.addWidget(more)
     # um embaixo do outro: lado a lado, os dois exigiam mais largura que o painel (e em outros idiomas, mais ainda)
@@ -187,7 +230,9 @@ def sign_dialog(app, item):
         c = current()
         is_file = c is not None and c.kind == "file"
         pw.setVisible(is_file)
-        pin_note.setVisible(c is not None and c.kind == "windows")
+        pin_note.setVisible(c is not None and c.kind == "windows" and c.store != "prumo")
+        prumo_note.setText(storage_text(c) if c is not None else "")
+        prumo_note.setVisible(c is not None and c.store == "prumo")
         more.setText("Este certificado está vencido: a assinatura não será aceita como válida."
                      if c is not None and c.expired else "")
         page.setEnabled(stamp.isChecked())
@@ -228,11 +273,28 @@ def sign_dialog(app, item):
                                   reason=reason.text().strip(), level=level)
     out = {}
 
-    def run():
-        signer = signing.file_signer(c, pw.text()) if c.kind == "file" else signing.windows_signer(c)
-        out["item"] = signing.sign_item(app.lib, item, signer, c.name, options)
+    move = False
+    if c.kind == "file" and signing.store_mode() == "windows":
+        from app_window import alert
+        idx = alert(app, "Proteger o certificado no Windows?",
+                    "Este certificado está guardado como arquivo no Prumo (versões anteriores). Para que ele não "
+                    "possa ser copiado para outro computador, o Prumo pode entregá-lo ao Windows agora, com a chave "
+                    "protegida, e apagar a cópia do arquivo. O Windows vai pedir para você criar uma senha para "
+                    "usar a chave.",
+                    [("Agora não", "cancel"), ("Proteger e assinar", "default")])
+        move = idx == 1
 
-    busy = "Assinando… (se o token pedir o PIN, digite-o na janela do Windows)" if c.kind == "windows" else "Assinando…"
+    def run():
+        cert = c
+        if move:
+            cert = signing.migrate_file_cert(c, pw.text(), _hwnd(app))
+            out["moved"] = cert
+        signer = (signing.file_signer(cert, pw.text()) if cert.kind == "file"
+                  else signing.windows_signer(cert, _hwnd(app)))
+        out["item"] = signing.sign_item(app.lib, item, signer, cert.name, options)
+
+    busy = ("Assinando… (se o Windows ou o token pedir a senha ou o PIN, digite-a na janela do Windows)"
+            if c.kind == "windows" or move else "Assinando…")
     if not app.attempt(run, busy=busy):
         return None
     result = out.get("item")
@@ -245,17 +307,24 @@ def settings_section(app, c, SectionTitle, small_button):
     """Seção "Assinatura digital" dos Ajustes."""
     c.addWidget(SectionTitle("Assinatura digital"))
     card = TileCard()
-    saved = signing.saved_certificates()
+    saved = signing.prumo_certificates() + signing.saved_certificates()
     if saved:
         for cert in saved:
             row = QHBoxLayout()
             col = QVBoxLayout()
             col.setSpacing(1)
             col.addWidget(Label(raw(cert.name), 15, 600))
-            col.addWidget(Label(raw(tr("A1 salvo no Prumo") + " · " + trf("emitido por {}", _issuer_cn(cert.issuer))
+            col.addWidget(Label(raw(tr(cert.kind_label) + " · " + trf("emitido por {}", _issuer_cn(cert.issuer))
                                     + " · " + trf("válido até {}", i18n.fmt_date(cert.not_after))
                                     + (" · " + tr("VENCIDO") if cert.expired else "")), 12.5, 400, "secondary"))
+            if cert.store == "prumo":
+                col.addWidget(Label(storage_text(cert), 12.5, 400, "secondary"))
+            elif cert.kind == "file" and signing.store_mode() == "windows":
+                col.addWidget(Label("Guardado como arquivo (versão anterior): a chave pode ser copiada junto com o "
+                                    "arquivo. Proteja-o no Windows.", 12.5, 500, "orange"))
             row.addLayout(col, 1)
+            if cert.kind == "file" and signing.store_mode() == "windows":
+                row.addWidget(small_button("Proteger no Windows…", lambda _c=False, x=cert: _migrate(app, x)))
             row.addWidget(small_button("Remover", lambda _c=False, x=cert: _remove(app, x), "red"))
             card.lay.addLayout(row)
     else:
@@ -265,6 +334,10 @@ def settings_section(app, c, SectionTitle, small_button):
     row.addStretch(1)
     card.lay.addLayout(row)
     card.lay.addWidget(Label(
+        "A1: o Prumo entrega o certificado ao Windows com a chave protegida, que não pode ser copiada para outro "
+        "computador (com chip TPM, ela fica dentro do chip). O Prumo não guarda o arquivo .pfx nem as senhas. "
+        "Guarde o arquivo original fora do computador: é com ele que se instala o certificado em outro lugar."
+        if signing.store_mode() == "windows" else
         "A1: o arquivo do certificado fica guardado só nesta conta do Windows (fora da biblioteca e da nuvem). "
         "A senha não é gravada: o Prumo pede a senha a cada assinatura.",
         13, 400, "secondary"))
@@ -356,9 +429,30 @@ def _issuer_cn(issuer: str) -> str:
     return issuer
 
 
+def _migrate(app, cert):
+    """Leva um A1 guardado como arquivo (versão anterior) para o Windows."""
+    from app_window import alert
+    res = alert(app, "Proteger o certificado no Windows",
+                trf("Digite a senha do certificado de {}. O Prumo entrega a chave ao Windows, protegida, e apaga a "
+                    "cópia do arquivo. Em seguida, o Windows pede para você criar uma senha para usar a chave.",
+                    raw(cert.name)),
+                [("Cancelar", "cancel"), ("Proteger", "default")], text="", secret=True)
+    if not res or res[0] != 1:
+        return
+    out = {}
+    if app.attempt(lambda: out.setdefault("c", signing.migrate_file_cert(cert, res[1], _hwnd(app))),
+                   busy="Guardando no Windows…"):
+        new = out["c"]
+        alert(app, "Certificado guardado no Windows", storage_text(new), [("OK", "default")])
+        app.current().refresh()
+
+
 def _remove(app, cert):
     from app_window import alert
     idx = alert(app, "Remover o certificado?",
+                trf("O certificado de {} sai do Prumo e do Windows. O arquivo original (.pfx) que você tem continua "
+                    "onde estava, e os PDFs já assinados continuam válidos.", cert.name)
+                if cert.store == "prumo" else
                 trf("O certificado de {} sai do Prumo. O arquivo original (.pfx) que você tem continua onde "
                     "estava, e os PDFs já assinados continuam válidos.", cert.name),
                 [("Cancelar", "cancel"), ("Remover", "destructive")])

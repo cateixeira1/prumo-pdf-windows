@@ -144,7 +144,8 @@ class Thumbnails(QObject):
             return img
         if k not in self.pending:
             self.pending.add(k)
-            disk = self.cache_dir / (hashlib.sha1(k.encode()).hexdigest() + ".png")
+            from library import thumb_prefix
+            disk = self.cache_dir / f"{thumb_prefix(path)}-{hashlib.sha1(k.encode()).hexdigest()}.png"
             self.pool.start(_ThumbJob(k, str(path), page, px_bucket(px), disk, self.emitter), request_priority())
         return self.best.get(self._base(k))
 
@@ -163,6 +164,27 @@ class Thumbnails(QObject):
                 if self.best.get(self._base(k)) is gone:
                     del self.best[self._base(k)]
         self.ready.emit(key)
+
+
+def drop_legacy_thumbs(folder: Path) -> int:
+    """
+    Apaga as miniaturas no formato antigo (até a versão 1.14), cujo nome não diz de que PDF são: com elas
+    não daria para apagar as miniaturas de um PDF que saiu da biblioteca.
+    """
+    import re
+    n = 0
+    try:
+        with os.scandir(folder) as it:
+            for e in it:
+                if re.fullmatch(r"[0-9a-f]{40}\.png", e.name):
+                    try:
+                        os.remove(e.path)
+                        n += 1
+                    except OSError:
+                        pass
+    except OSError:
+        pass
+    return n
 
 
 def prune_thumb_cache(folder: Path, budget: int | None = None, max_age_days: int = 90) -> tuple[int, int]:
@@ -278,7 +300,11 @@ class LibraryHub(QObject):
 
     def _prune_thumbs(self):
         import threading
-        threading.Thread(target=prune_thumb_cache, args=(self.lib.thumbs_dir,), daemon=True).start()
+
+        def work(folder):
+            drop_legacy_thumbs(folder)
+            prune_thumb_cache(folder)
+        threading.Thread(target=work, args=(self.lib.thumbs_dir,), daemon=True).start()
 
     def shutdown(self):
         if self._thread is not None:

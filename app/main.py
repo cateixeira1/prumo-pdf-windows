@@ -16,6 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def run_worker(job_file: str) -> int:
+    import winsys
+    job_file = os.path.abspath(job_file)
+    winsys.use_safe_cwd()      # o tesseract.exe é procurado também na pasta atual
     import ocr_worker  # não importa Qt: o processo de OCR fica leve
     return ocr_worker.main(job_file)
 
@@ -302,6 +305,8 @@ def run_gui(files: list[str]) -> int:
     convert_mode = "--convert" in files
     paths = [os.path.abspath(f) for f in files if not f.startswith("--")]
     message = {"open": [] if convert_mode else paths, "convert": paths if convert_mode else []}
+    import winsys
+    winsys.use_safe_cwd()      # caminhos já completos: a pasta atual deixa de ser a de onde o PDF veio
     app, T = _app_setup()
     mark("qt+tema")
     if _send_to_running(message):

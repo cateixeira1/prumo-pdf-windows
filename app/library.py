@@ -196,6 +196,11 @@ def local_data_dir() -> Path:
     return Path(base) / "Prumo PDF"
 
 
+def thumb_prefix(path: str | Path) -> str:
+    """Início do nome das miniaturas de um arquivo no disco: dá para apagar todas as de um PDF de uma vez."""
+    return hashlib.sha1(os.path.normcase(os.path.abspath(str(path))).encode("utf-8")).hexdigest()[:16]
+
+
 # --- Biblioteca ---------------------------------------------------------------
 
 class Library:
@@ -269,9 +274,8 @@ class Library:
             new_metas[meta.id] = meta
             items.append(PDFItem(meta, full, size, mtime))
         for gone in set(self._metas) - set(new_metas):
-            for p in (self.versions_dir / f"{gone}.pdf", self.text_dir / f"{gone}.txt"):
-                p.unlink(missing_ok=True)
-            self._texts.pop(gone, None)
+            # Saiu da biblioteca (Lixeira, apagado, movido para fora): nada dele fica na pasta do Prumo.
+            self.purge_local(gone, self.root / self._metas[gone].path)
         changed = set(new_metas) != set(self._metas) or any(
             m.path != old_paths.get(k) for k, m in new_metas.items())
         self._metas = new_metas
@@ -662,10 +666,32 @@ class Library:
         self.save_meta()
         self.reload()
 
-    def delete(self, items: list[PDFItem]) -> None:
+    def delete(self, items: list[PDFItem], permanent: bool = False) -> None:
+        """Manda para a Lixeira; com `permanent`, apaga de vez (não vai para a Lixeira)."""
         for it in items:
-            _remove_to_trash(it.path)
+            if permanent:
+                it.path.unlink(missing_ok=True)
+            else:
+                _remove_to_trash(it.path)
         self.reload()
+
+    def purge_local(self, id: str, path: str | Path | None = None) -> None:
+        """
+        Apaga o que o Prumo guarda deste PDF fora da biblioteca: versão para desfazer, texto extraído e
+        miniaturas das páginas. Usado quando o PDF sai da biblioteca (inclusive ao proteger com senha).
+        """
+        for p in (self.versions_dir / f"{id}.pdf", self.text_dir / f"{id}.txt"):
+            try:
+                p.unlink(missing_ok=True)
+            except OSError:
+                pass
+        self._texts.pop(id, None)
+        if path is not None:
+            for f in self.thumbs_dir.glob(thumb_prefix(path) + "-*.png"):
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
 
     def duplicate(self, item: PDFItem) -> PDFItem | None:
         dest = self.unique_path(item.folder, trf("{} (cópia)", item.name))

@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "Prumo PDF"
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.15.0"
 
 # --- Critérios de classificação de página -----------------------------------
 # São heurísticas, não regras exatas. Ficam aqui para serem ajustadas com
@@ -103,7 +103,8 @@ def find_tesseract() -> Path | None:
     bundled = bundled_tesseract_dir()
     if bundled is not None:
         return bundled / "tesseract.exe"
-    found = shutil.which("tesseract")
+    import winsys
+    found = winsys.which("tesseract")
     if found:
         return Path(found)
     if os.name != "nt":

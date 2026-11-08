@@ -74,3 +74,5 @@ PDF e arquivos para converter ({});;PDF (*.pdf);;Imagens ({});;Word, Excel e Pow
 Certificado A1 (*.pfx *.p12);;Todos os arquivos (*)
 PDF (*.pdf)
 ZIP (*.zip)
+# Nome de arquivo das miniaturas no disco
+{}-{}.png

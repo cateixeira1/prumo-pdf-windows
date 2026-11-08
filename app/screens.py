@@ -1502,6 +1502,30 @@ def password_strength(pw: str) -> tuple[str, str]:
     return ("Senha forte.", "green")
 
 
+PROTECT_FATES = [
+    ("trash", "Mandar para a Lixeira (dá para recuperar)"),
+    ("erase", "Apagar de vez (não vai para a Lixeira)"),
+    ("keep", "Manter (fica o original sem senha e a cópia com senha)"),
+]
+
+
+def protect_fate_note(key: str, library_root) -> str:
+    """Explica o que acontece com o original sem senha em cada escolha."""
+    import backup
+    cloud = backup.cloud_of(library_root)
+    if key == "keep":
+        return raw(tr("O original continua sem senha na biblioteca. Quem tiver acesso a este computador consegue "
+                      "abri-lo."))
+    if key == "trash":
+        text = tr("Qualquer pessoa ou programa com acesso a este computador consegue tirar o original da Lixeira.")
+    else:
+        text = tr("Se você esquecer a senha, não haverá outra cópia para abrir.")
+    if cloud:
+        text += " " + trf("A biblioteca está no {}: a nuvem guarda por um tempo os arquivos apagados. Para não "
+                          "sobrar cópia sem senha, apague o original também da lixeira da nuvem.", raw(cloud))
+    return raw(text)
+
+
 def protect_dialog(app, item):
     """Cria uma cópia do PDF com senha (AES-256, o padrão de PDF), que abre em qualquer leitor com a senha."""
     ov = SheetOverlay(app, 460)
@@ -1524,9 +1548,26 @@ def protect_dialog(app, item):
     card.lay.addWidget(strength)
     info = Label("", 13, 500, "red")
     card.lay.addWidget(info)
-    trash = QCheckBox("Mandar o original (sem senha) para a Lixeira")
-    trash.setChecked(True)
-    card.lay.addWidget(trash)
+    card.lay.addSpacing(4)
+    card.lay.addWidget(Label("E o original, sem senha?", 13, 600))
+    fate_group = QButtonGroup(ov)
+    fates = {}
+    for key, title in PROTECT_FATES:
+        r = QRadioButton(title)
+        r.setCursor(Qt.PointingHandCursor)
+        fate_group.addButton(r)
+        fates[key] = r
+        card.lay.addWidget(r)
+    fates.get(app.setting("protect_original", "trash"), fates["trash"]).setChecked(True)
+    fate_note = Label("", 13, 400, "secondary")
+    card.lay.addWidget(fate_note)
+
+    def show_fate():
+        key = next(k for k, r in fates.items() if r.isChecked())
+        fate_note.setText(protect_fate_note(key, app.lib.root))
+    for r in fates.values():
+        r.toggled.connect(lambda _on: show_fate())
+    show_fate()
     warn = Label("Importante: se você esquecer a senha, não há como abrir o PDF, nem pelo Prumo. Guarde a senha "
                  "num lugar seguro. Evite acentos e “ç” na senha: alguns leitores de PDF não os entendem.",
                  13, 500, "orange")
@@ -1561,6 +1602,8 @@ def protect_dialog(app, item):
     if not ov.run():
         return
     password = pw1.text()
+    fate = next(k for k, r in fates.items() if r.isChecked())
+    app.set_setting("protect_original", fate)
     lib = app.lib
     tmp = lib.temp_path()
     try:
@@ -1570,8 +1613,9 @@ def protect_dialog(app, item):
         tmp.unlink(missing_ok=True)
         app.show_error(trf("Não foi possível proteger: {}", exc))
         return
-    if trash.isChecked():
-        app.attempt(lambda: lib.delete([lib.item(item.id)] if lib.item(item.id) else []))
+    if fate in ("trash", "erase"):
+        # Ao sair da biblioteca, o Prumo também apaga as miniaturas, o texto e a versão de desfazer do original.
+        app.attempt(lambda: lib.delete([lib.item(item.id)] if lib.item(item.id) else [], permanent=fate == "erase"))
         app.back()
     app.toast(trf("PDF protegido: {}", new.name), "Abrir", lambda: app.open_document(new.id))
 
@@ -2322,6 +2366,100 @@ def cloud_dialog(app):
         return
 
 
+CFA_TEXT = {
+    "on": "Acesso controlado a pastas: ligado",
+    "audit": "Acesso controlado a pastas: só registrando (modo de auditoria)",
+    "disk": "Acesso controlado a pastas: ligado só para o disco",
+    "off": "Acesso controlado a pastas: desligado",
+    None: "Acesso controlado a pastas: não deu para saber",
+}
+CFA_DETAIL = {
+    "on": "Programas não confiáveis não conseguem alterar nem apagar os arquivos das pastas protegidas.",
+    "audit": "O Windows só anota as mudanças, sem bloquear. Para bloquear, ligue a proteção.",
+    "disk": "O Windows protege o disco, mas não as pastas. Para proteger a pasta dos PDFs, ligue a proteção.",
+    "off": "Qualquer programa aberto nesta conta, inclusive um vírus de resgate (ransomware), consegue alterar ou "
+           "criptografar os seus PDFs.",
+    None: "O Microsoft Defender pode estar desligado ou substituído por outro antivírus. Nesse caso, a proteção "
+          "contra ransomware é a desse antivírus.",
+}
+
+
+def ransomware_section(app, c, small_button):
+    """Ajustes > Proteção contra ransomware (Acesso controlado a pastas do Microsoft Defender)."""
+    import protection
+    if not protection.available():
+        return
+    c.addWidget(SectionTitle("Proteção contra ransomware"))
+    card = TileCard()
+    title = Label("Acesso controlado a pastas: conferindo…", 15, 600)
+    detail = Label("", 13, 400, "secondary")
+    card.lay.addWidget(title)
+    card.lay.addWidget(detail)
+    row = QHBoxLayout()
+    row.addWidget(small_button("Proteger a pasta dos PDFs…", lambda: protect_library_dialog(app)))
+    row.addWidget(small_button("Segurança do Windows", lambda: QDesktopServices.openUrl(QUrl(protection.SECURITY_PAGE))))
+    row.addStretch(1)
+    card.lay.addLayout(row)
+    card.lay.addWidget(Label(
+        "É um recurso do Windows: protege contra mudanças nos arquivos, não contra leitura. O Prumo inclui a pasta "
+        "da biblioteca nas pastas protegidas e se coloca na lista de programas permitidos.", 13, 400, "secondary"))
+    c.addWidget(card)
+    _fill_later(protection.state, lambda st: (title.setText(tr(CFA_TEXT.get(st, CFA_TEXT[None]))),
+                                              detail.setText(tr(CFA_DETAIL.get(st, CFA_DETAIL[None])))))
+
+
+def _fill_later(work, done, every_ms=150):
+    """Roda `work` fora da tela principal e entrega o resultado a `done` na tela (se ela ainda existir)."""
+    import threading
+
+    from PySide6.QtCore import QTimer
+    box = {}
+    threading.Thread(target=lambda: box.setdefault("r", work()), daemon=True).start()
+    timer = QTimer()
+
+    def check():
+        if "r" not in box:
+            return
+        timer.stop()
+        try:
+            done(box["r"])
+        except RuntimeError:          # a tela já fechou
+            pass
+    timer.timeout.connect(check)
+    timer.start(every_ms)
+    _fill_later.timers.append(timer)
+    _fill_later.timers[:] = [t for t in _fill_later.timers if t.isActive()]
+
+
+_fill_later.timers = []
+
+
+def protect_library_dialog(app):
+    """Inclui a pasta da biblioteca no Acesso controlado a pastas, permite o Prumo e (se o usuário quiser) liga."""
+    import protection
+    from app_window import alert
+    idx = alert(app, "Proteger a pasta dos PDFs",
+                raw(trf("O Windows vai pedir permissão de administrador. Depois disso:\n\n• a pasta “{}” entra nas "
+                        "pastas protegidas;\n• o Prumo entra na lista de programas que podem alterá-la;\n• o Acesso "
+                        "controlado a pastas é ligado, se você escolher.\n\nCom a proteção ligada, outros programas "
+                        "que salvam em pastas protegidas (Documentos, Imagens, Área de Trabalho) podem ser bloqueados "
+                        "até você permiti-los na Segurança do Windows.", raw(str(app.lib.root)))),
+                [("Cancelar", "cancel"), ("Só incluir a pasta", "default"), ("Incluir e ligar", "default")])
+    if idx not in (1, 2):
+        return
+    ok = protection.protect_library(app.lib.root, enable=idx == 2, hwnd=int(app.winId()))
+    if ok is None:
+        app.toast("Nada mudou: o Windows não recebeu a permissão de administrador.")
+    elif ok:
+        app.toast("Pasta dos PDFs protegida pelo Windows." if idx == 2 else
+                  "Pasta incluída. A proteção vale quando o Acesso controlado a pastas estiver ligado.")
+    else:
+        app.show_error("O Windows não aceitou a mudança. Ligue o Acesso controlado a pastas pela Segurança do "
+                       "Windows (Proteção contra ransomware).")
+    if hasattr(app.current(), "refresh"):
+        app.current().refresh()
+
+
 class SettingsScreen(Screen):
     def __init__(self, app):
         super().__init__(app)
@@ -2433,6 +2571,8 @@ class SettingsScreen(Screen):
             "proteger um arquivo em si (por exemplo, antes de enviar), use “Proteger com senha” na tela do PDF, que "
             "usa a criptografia padrão de PDF (AES-256) e abre em qualquer leitor com a senha.", 13, 400, "secondary"))
         c.addWidget(card)
+
+        ransomware_section(app, c, small_button)
 
         import sign_ui
         sign_ui.settings_section(app, c, SectionTitle, small_button)

@@ -143,6 +143,7 @@ class CoreTests(unittest.TestCase):
     def _cert(self, name="MARIA DE TESTE:12345678909", password="senha123"):
         import demo
         os.environ["PRUMO_CERT_DIR"] = str(self.tmp / "certs")
+        os.environ["PRUMO_A1_STORE"] = "file"
         pfx = self.tmp / "cert.pfx"
         pfx.write_bytes(demo.demo_pfx(name, password))
         return pfx
@@ -524,6 +525,7 @@ class ReaderTests(unittest.TestCase):
         from reader import SIGNED_MSG, ReaderScreen
         w = self.win
         os.environ["PRUMO_CERT_DIR"] = str(self.tmp / "certs")
+        os.environ["PRUMO_A1_STORE"] = "file"
         import demo
         pfx = self.tmp / "c.pfx"
         pfx.write_bytes(demo.demo_pfx("ANA TESTE", "x1"))

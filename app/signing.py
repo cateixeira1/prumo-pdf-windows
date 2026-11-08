@@ -2,9 +2,10 @@
 Assinatura digital de PDF (PAdES), sem interface.
 
 Certificados aceitos:
-- A1 em arquivo (.pfx ou .p12): o Prumo guarda uma cópia do arquivo nesta conta do Windows
-  (pasta de dados do Prumo, fora da biblioteca e da nuvem). A senha não é guardada: o Prumo
-  pede a senha a cada assinatura.
+- A1 em arquivo (.pfx ou .p12): desde a 1.15, o Prumo entrega a chave ao Windows marcada como não exportável
+  (no chip TPM, quando há) e não guarda o arquivo (ver wincert.py). Com proteção forte, o Windows pede a senha
+  da chave a cada assinatura. Certificados guardados como arquivo nas versões anteriores ("A1 salvo no Prumo")
+  continuam funcionando e passam para o Windows na próxima assinatura (migrate_file_cert).
 - Certificados do Windows: A1 instalado no Windows e A3 em token ou cartão (com o programa do
   token instalado, o certificado aparece em "Certificados – Usuário Atual > Pessoal"). A chave não
   sai do token: o Windows (e o programa do token, que pede o PIN) faz a assinatura.
@@ -91,6 +92,11 @@ class CertInfo:
     thumbprint: str = ""
     der: bytes = b""
     chain: list[bytes] = field(default_factory=list)
+    store: str = ""          # "prumo": A1 que o Prumo guardou no Windows (chave não exportável)
+    provider: str = ""       # provedor de chaves do Windows (TPM ou software)
+    key_name: str = ""
+    hardware: bool = False   # chave no chip TPM
+    protected: bool = False  # o Windows pede a senha da chave a cada uso
 
     @property
     def expired(self) -> bool:
@@ -99,8 +105,16 @@ class CertInfo:
     @property
     def label(self) -> str:
         import i18n
-        tipo = i18n.tr("A1 salvo no Prumo" if self.kind == "file" else "Windows (A1 instalado ou A3)")
-        return i18n.raw(f"{self.name} · {tipo} · " + i18n.trf("válido até {}", i18n.fmt_date(self.not_after)))
+        return i18n.raw(f"{self.name} · {i18n.tr(self.kind_label)} · "
+                        + i18n.trf("válido até {}", i18n.fmt_date(self.not_after)))
+
+    @property
+    def kind_label(self) -> str:
+        if self.kind == "file":
+            return "A1 salvo no Prumo"
+        if self.store == "prumo":
+            return "A1 no Windows, no chip TPM" if self.hardware else "A1 no Windows"
+        return "Windows (A1 instalado ou A3)"
 
 
 def cert_dir() -> Path:
@@ -157,8 +171,99 @@ def _load_pfx(data: bytes, password: str):
     return key, cert, list(others or [])
 
 
-def import_a1(src: str | Path, password: str) -> CertInfo:
-    """Confere a senha e guarda uma cópia do certificado A1 para assinar depois."""
+def store_mode() -> str:
+    """
+    "windows": o A1 vai para o Windows com a chave não exportável (padrão no Windows).
+    "file": cópia do .pfx na pasta do Prumo (outros sistemas, testes e demonstração: PRUMO_A1_STORE=file).
+    """
+    import wincert
+    mode = os.environ.get("PRUMO_A1_STORE", "windows")
+    return "windows" if mode == "windows" and wincert.available() else "file"
+
+
+def import_a1(src: str | Path, password: str, hwnd: int | None = None) -> CertInfo:
+    """Confere a senha e guarda o certificado A1 para assinar depois (no Windows, sem guardar o arquivo)."""
+    if store_mode() == "windows":
+        return import_a1_windows(Path(src).read_bytes(), password, hwnd)
+    return import_a1_file(src, password)
+
+
+def _windows_dir() -> Path:
+    return cert_dir() / "Windows"
+
+
+def import_a1_windows(data: bytes, password: str, hwnd: int | None = None) -> CertInfo:
+    """
+    Entrega a chave ao Windows (não exportável; TPM quando há; senha da chave a cada uso, se der) e guarda só
+    a parte pública (certificado e cadeia) na pasta do Prumo, para montar a assinatura.
+    """
+    import wincert
+    from cryptography.hazmat.primitives.serialization import Encoding
+    import i18n
+    _key, cert, others = _load_pfx(data, password)
+    der = cert.public_bytes(Encoding.DER)
+    if not _usable_for_signing(der):
+        raise UserError("Este certificado não serve para assinatura digital.")
+    thumb = hashlib.sha1(der).hexdigest().upper()
+    for known in prumo_certificates():
+        if known.thumbprint == thumb and wincert.key_state(known.provider, known.key_name) is not None:
+            return known                                 # já está no Windows
+    name, _doc = _name_of(cert)
+    protect = os.environ.get("PRUMO_CERT_NO_UI") != "1"
+    try:
+        imp = wincert.import_pfx(data, password, protect=protect, hwnd=hwnd,
+                                 use_tpm=os.environ.get("PRUMO_CERT_NO_TPM") != "1",
+                                 title=i18n.tr("Prumo PDF: senha do certificado"),
+                                 description=i18n.trf("Senha para assinar com o certificado de {}", i18n.raw(name)))
+    except wincert.WinCertError as exc:
+        if exc.code in wincert.CANCELLED:
+            raise UserError("Você cancelou a janela do Windows. O certificado não foi adicionado.") from None
+        raise UserError(i18n.trf("O Windows não aceitou guardar o certificado: {}", str(exc)[:300])) from None
+    chain = [o.public_bytes(Encoding.DER) for o in others]
+    d = _windows_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{thumb}.json").write_text(json.dumps({
+        "der": base64.b64encode(der).decode(), "chain": [base64.b64encode(c).decode() for c in chain],
+        "provider": imp.provider, "key": imp.key_name, "hardware": imp.hardware, "protected": imp.protected,
+        "attempts": imp.attempts}, ensure_ascii=False), encoding="utf-8")
+    return _info_from_der(der, "windows", chain, id=f"win:{thumb}", thumbprint=thumb, store="prumo",
+                          provider=imp.provider, key_name=imp.key_name, hardware=imp.hardware,
+                          protected=imp.protected)
+
+
+def prumo_certificates() -> list[CertInfo]:
+    """A1 que o Prumo guardou no Windows (só a parte pública fica na pasta do Prumo)."""
+    out = []
+    d = _windows_dir()
+    if not d.exists():
+        return out
+    for meta in sorted(d.glob("*.json")):
+        try:
+            data = json.loads(meta.read_text(encoding="utf-8"))
+            der = base64.b64decode(data["der"])
+            chain = [base64.b64decode(c) for c in data.get("chain", [])]
+            out.append(_info_from_der(der, "windows", chain, id=f"win:{meta.stem}", thumbprint=meta.stem,
+                                      store="prumo", provider=data.get("provider", ""), key_name=data.get("key", ""),
+                                      hardware=bool(data.get("hardware")), protected=bool(data.get("protected"))))
+        except (OSError, ValueError, KeyError):
+            continue
+    return out
+
+
+def migrate_file_cert(info: CertInfo, password: str, hwnd: int | None = None) -> CertInfo:
+    """
+    A1 guardado como arquivo (versões até a 1.14): leva para o Windows com a senha que o usuário acabou de
+    digitar e apaga a cópia do arquivo. Se não der, o arquivo continua como estava.
+    """
+    if info.kind != "file" or info.path is None or store_mode() != "windows":
+        return info
+    new = import_a1_windows(info.path.read_bytes(), password, hwnd)
+    remove_certificate(info)
+    return new
+
+
+def import_a1_file(src: str | Path, password: str) -> CertInfo:
+    """Guarda uma cópia do arquivo .pfx (fora do Windows, testes e demonstração)."""
     from cryptography.hazmat.primitives.serialization import Encoding
     data = Path(src).read_bytes()
     _key, cert, others = _load_pfx(data, password)
@@ -197,10 +302,28 @@ def saved_certificates() -> list[CertInfo]:
 
 
 def remove_certificate(info: CertInfo) -> None:
+    if info.store == "prumo":
+        import wincert
+        wincert.remove(info.thumbprint, info.provider, info.key_name)
+        (_windows_dir() / f"{info.thumbprint}.json").unlink(missing_ok=True)
+        return
     if info.kind != "file" or info.path is None:
         raise UserError("Certificados do Windows são removidos pelo Windows (certmgr.msc) ou pelo programa do token.")
-    info.path.unlink(missing_ok=True)
+    _wipe(info.path)
     info.path.with_suffix(".json").unlink(missing_ok=True)
+
+
+def _wipe(path: Path) -> None:
+    """Sobrescreve com zeros antes de apagar (num SSD isso não garante que os dados antigos sumam do disco)."""
+    try:
+        n = path.stat().st_size
+        with open(path, "r+b") as f:
+            f.write(b"\0" * n)
+            f.flush()
+            os.fsync(f.fileno())
+    except OSError:
+        pass
+    path.unlink(missing_ok=True)
 
 
 # --- certificados do Windows (A1 instalado e A3) ------------------------------------------
@@ -244,7 +367,8 @@ def _powershell(script: str, stdin: str = "", env: dict | None = None, timeout: 
     e = dict(os.environ)
     e.update(env or {})
     try:
-        r = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        import winsys
+        r = subprocess.run([winsys.powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                             "-Command", script], input=stdin, capture_output=True, text=True, timeout=timeout,
                            creationflags=flags, env=e)
     except subprocess.TimeoutExpired:
@@ -283,9 +407,11 @@ def windows_certificates() -> list[CertInfo]:
 
 
 def all_certificates() -> list[CertInfo]:
-    found = saved_certificates()
+    ours = prumo_certificates()
+    found = saved_certificates() + ours
     try:
-        found += windows_certificates()
+        mine = {c.thumbprint.upper() for c in ours}
+        found += [c for c in windows_certificates() if c.thumbprint.upper() not in mine]
     except UserError:
         pass
     # o mesmo certificado salvo no Prumo e instalado no Windows aparece uma vez (o do Windows)
@@ -344,12 +470,14 @@ def file_signer(info: CertInfo, password: str):
                         cert_registry=SimpleCertificateStore.from_certs(chain))
 
 
-def windows_signer(info: CertInfo):
+def windows_signer(info: CertInfo, hwnd: int | None = None):
     from asn1crypto import algos
     from pyhanko.sign.signers.pdf_cms import Signer
     from pyhanko_certvalidator.registry import SimpleCertificateStore
 
     algo, size = _key_algo(info.der)
+    if info.store == "prumo":
+        return _prumo_signer(info, algo, size, hwnd)
 
     class _WindowsSigner(Signer):
         async def async_sign_raw(self, data, digest_algorithm, dry_run=False):
@@ -363,6 +491,38 @@ def windows_signer(info: CertInfo):
     mech = algos.SignedDigestAlgorithm({"algorithm": "sha256_rsa" if algo == "rsa" else "sha256_ecdsa"})
     return _WindowsSigner(signing_cert=_asn1(info.der), signature_mechanism=mech,
                           cert_registry=SimpleCertificateStore.from_certs([_asn1(c) for c in info.chain]))
+
+
+def _prumo_signer(info: CertInfo, algo: str, size: int, hwnd: int | None):
+    """A1 guardado pelo Prumo no Windows: assina aqui mesmo (NCryptSignHash); a chave não sai do Windows."""
+    from asn1crypto import algos
+    from pyhanko.sign.signers.pdf_cms import Signer
+    from pyhanko_certvalidator.registry import SimpleCertificateStore
+
+    import wincert
+
+    class _PrumoWindowsSigner(Signer):
+        async def async_sign_raw(self, data, digest_algorithm, dry_run=False):
+            if dry_run:
+                return bytes(size)
+            if digest_algorithm.lower() != "sha256":
+                raise UserError("Resumo criptográfico não suportado.")
+            digest = hashlib.sha256(data).digest()
+            try:
+                sig = wincert.sign_digest(info.provider, info.key_name, digest, algo == "rsa", hwnd)
+            except wincert.WinCertError as exc:
+                if exc.code in wincert.CANCELLED:
+                    raise UserError("Assinatura cancelada na janela do Windows.") from None
+                if exc.code == wincert.NTE_BAD_KEYSET:
+                    raise UserError("A chave deste certificado não está mais no Windows. Remova o certificado "
+                                    "nos Ajustes e adicione de novo pelo arquivo .pfx.") from None
+                import i18n
+                raise UserError(i18n.trf("O Windows não conseguiu usar o certificado: {}", str(exc)[:300])) from None
+            return sig if algo == "rsa" else _p1363_to_der(sig)
+
+    mech = algos.SignedDigestAlgorithm({"algorithm": "sha256_rsa" if algo == "rsa" else "sha256_ecdsa"})
+    return _PrumoWindowsSigner(signing_cert=_asn1(info.der), signature_mechanism=mech,
+                               cert_registry=SimpleCertificateStore.from_certs([_asn1(c) for c in info.chain]))
 
 
 # --- PDF ---------------------------------------------------------------------------------

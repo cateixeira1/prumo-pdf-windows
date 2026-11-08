@@ -238,6 +238,8 @@ class MainWindow(QMainWindow):
             self.show_error(str(exc))
         except PermissionError:
             self._restore_cursor(busy)
+            if self._blocked_by_cfa():
+                return False
             self.show_error("O Windows não permitiu a operação. O arquivo pode estar aberto em outro programa "
                             "(feche o leitor de PDF e tente de novo).")
         except OSError as exc:
@@ -249,6 +251,31 @@ class MainWindow(QMainWindow):
         finally:
             self._restore_cursor(busy)
         return False
+
+    def _blocked_by_cfa(self) -> bool:
+        """
+        Gravar na biblioteca deu "acesso negado" e o Acesso controlado a pastas está ligado: o Windows bloqueou o
+        Prumo (programa ainda não permitido). Explica e oferece permitir. Devolve True se tratou o erro.
+        """
+        import protection
+        if protection.state(timeout=15) not in ("on", "disk"):
+            return False
+        idx = alert(self, "O Windows bloqueou o Prumo",
+                    "O Acesso controlado a pastas (proteção contra ransomware do Windows) não deixou o Prumo gravar "
+                    "na pasta dos PDFs. Para o Prumo poder salvar, coloque-o na lista de programas permitidos. Isso "
+                    "pede permissão de administrador.",
+                    [("Agora não", "cancel"), ("Permitir o Prumo…", "default")])
+        if idx == 1:
+            ok = protection.allow_prumo(int(self.winId()))
+            if ok:
+                self.toast("Prumo permitido. Tente de novo.")
+            elif ok is None:
+                self.toast("Nada mudou: o Windows não recebeu a permissão de administrador.")
+            else:
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+                QDesktopServices.openUrl(QUrl(protection.ALLOW_APP_PAGE))
+        return True
 
     @staticmethod
     def _restore_cursor(busy):

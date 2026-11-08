@@ -40,6 +40,7 @@ class StampTests(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="prumo_v112_"))
         os.environ["PRUMO_CERT_DIR"] = str(self.tmp / "certs")
+        os.environ["PRUMO_A1_STORE"] = "file"
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)

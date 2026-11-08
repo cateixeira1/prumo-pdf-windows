@@ -196,6 +196,7 @@ def apply_screen(win, screen: str):
         import os
         import tempfile
         os.environ["PRUMO_CERT_DIR"] = tempfile.mkdtemp(prefix="prumo_cert_demo_")
+        os.environ["PRUMO_A1_STORE"] = "file"        # demonstração: não mexe nos certificados do Windows
         import signing
         pfx = Path(os.environ["PRUMO_CERT_DIR"]) / "demo.pfx"
         pfx.write_bytes(demo_pfx("ANA DE SOUZA", "demo"))

@@ -30,7 +30,9 @@ IGNORE_FILE = Path(__file__).resolve().parent / "i18n_ignore.txt"
 
 # Modo clássico (antigo, só por "--classico") e dados de demonstração: fora da tradução.
 SKIP_FILES = {"demo.py", "page_ocr.py", "page_merge.py", "page_extract.py", "ui_common.py", "i18n.py",
-              "ios_theme.py", "machine.py", "ocr_plugin.py", "ocr_runner.py"}
+              "ios_theme.py", "machine.py", "ocr_plugin.py", "ocr_runner.py",
+              # chamadas ao Windows (nomes de propriedades, comandos e detalhes técnicos dos erros, em inglês)
+              "wincert.py", "protection.py", "winsys.py"}
 SKIP_FUNCS = {("main.py", "run_classic"), ("main.py", "self_test"), ("main.py", "run_gui"),
               ("main.py", "_server_name"), ("ocr_worker.py", "_write_txt")}
 TR_FUNCS = {"tr", "trf", "trn", "tr_in", "trf_in"}

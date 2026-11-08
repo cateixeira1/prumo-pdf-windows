@@ -325,13 +325,14 @@ def open_path(path: str):
 
 
 def reveal_in_folder(path: str):
+    import winsys
     p = os.path.normpath(path)
     if sys.platform == "win32":
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         if os.path.isdir(p):
-            subprocess.Popen(["explorer", p], creationflags=flags)
+            subprocess.Popen([winsys.explorer(), p], creationflags=flags)
         else:
-            subprocess.Popen(["explorer", "/select,", p], creationflags=flags)
+            subprocess.Popen([winsys.explorer(), "/select,", p], creationflags=flags)
     else:
         QDesktopServices.openUrl(QUrl.fromLocalFile(p if os.path.isdir(p) else os.path.dirname(p)))
 

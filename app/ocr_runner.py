@@ -23,22 +23,33 @@ def worker_command() -> tuple[str, list[str]]:
 def kill_tree(proc: QProcess):
     pid = proc.processId()
     if sys.platform == "win32" and pid:
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+        import winsys
+        subprocess.run([winsys.system_exe("taskkill.exe"), "/PID", str(pid), "/T", "/F"],
                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     proc.kill()
 
 
+# Pastas e arquivos temporários do Prumo que podem ter conteúdo de PDFs (cópias para desfazer, OCR, conversão).
+STALE_PREFIXES = ("prumo_ocr_", "prumo_job_", "prumo_desfazer_", "prumo_src_", "prumo_conv_", "prumo_docx_",
+                  "prumo_lo_", "prumo_restore_")
+
+
 def clean_stale_temp():
-    """Remove pastas temporárias de execuções interrompidas (mais de 6 horas)."""
+    """Remove o que sobrou de execuções interrompidas (mais de 6 horas), para não ficar cópia de PDF esquecida."""
     tmp = Path(tempfile.gettempdir())
     limit = time.time() - 6 * 3600
-    for d in list(tmp.glob("prumo_ocr_*")) + list(tmp.glob("prumo_job_*")):
-        try:
-            if d.is_dir() and d.stat().st_mtime < limit:
-                shutil.rmtree(d, ignore_errors=True)
-        except OSError:
-            pass
+    for prefix in STALE_PREFIXES:
+        for d in tmp.glob(prefix + "*"):
+            try:
+                if d.stat().st_mtime >= limit:
+                    continue
+                if d.is_dir():
+                    shutil.rmtree(d, ignore_errors=True)
+                else:
+                    d.unlink()
+            except OSError:
+                pass
 
 
 class OcrRunner(QObject):
