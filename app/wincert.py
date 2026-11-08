@@ -46,6 +46,7 @@ NCRYPT_IMPL_HARDWARE_FLAG = 0x1
 NCRYPTBUFFER_PKCS_KEY_NAME = 45
 BCRYPT_PAD_PKCS1 = 0x2
 NTE_BAD_KEYSET = -2146893802          # 0x80090016: a chave não existe
+NTE_SILENT_CONTEXT = -2146893790      # 0x80090022: precisaria mostrar uma janela
 # wincrypt.h
 X509_ASN_ENCODING = 0x1
 PKCS_7_ASN_ENCODING = 0x10000
@@ -209,7 +210,7 @@ def _rsa_private_blob(key) -> bytes | None:
 # --- importar -------------------------------------------------------------------------------
 
 def _try_import(provider: str, key_name: str, key, protect: bool, hwnd: int | None,
-                title: str, description: str) -> tuple[bool, bool]:
+                title: str, description: str, silent: bool = False) -> tuple[bool, bool]:
     """Importa a chave num provedor. Devolve (está em hardware, protegida). Falha → WinCertError, sem sobras."""
     a = _lib()
     prov = _open_provider(provider)
@@ -244,7 +245,8 @@ def _try_import(provider: str, key_name: str, key, protect: bool, hwnd: int | No
                                 title, key_name, description)
             _check(a["set_property"](hkey, "UI Policy", ctypes.byref(pol), ctypes.sizeof(pol), NCRYPT_PERSIST_FLAG),
                    "set UI Policy")
-        _check(a["finalize"](hkey, 0), "finalize key")
+        # silent: só nos testes (sem ninguém para a janela): com proteção forte, o Windows recusa (NTE_SILENT_CONTEXT)
+        _check(a["finalize"](hkey, NCRYPT_SILENT_FLAG if silent else 0), "finalize key")
         impl = _get_dword(hkey, "Impl Type") or 0
         exp = _get_dword(hkey, "Export Policy")
         if exp is None or exp & (NCRYPT_ALLOW_EXPORT_FLAG | NCRYPT_ALLOW_PLAINTEXT_EXPORT_FLAG):

@@ -353,6 +353,27 @@ def test_a1_in_windows_signs_valid_pdf(tmp_path, windows_store):
     assert status.signing_cert.sha1.hex().upper() == info.thumbprint
 
 
+def test_strong_protection_is_accepted_and_needs_a_window(tmp_path, windows_store):
+    """
+    Com a senha da chave a cada uso, o Windows precisa mostrar a janela para criar a senha: sem janela
+    (modo silencioso, como no CI), ele recusa com NTE_SILENT_CONTEXT, e nada fica para trás.
+    """
+    from cryptography.hazmat.primitives.serialization import pkcs12
+
+    import wincert
+    key, _cert, _o = pkcs12.load_key_and_certificates(_make_pfx("SILVIA SILENCIOSA", "x"), b"x")
+    name = wincert.KEY_PREFIX + "TESTE-SILENCIOSO"
+    with pytest.raises(wincert.WinCertError) as err:
+        wincert._try_import(wincert.SOFTWARE, name, key, True, None, "Prumo PDF", "teste", silent=True)
+    assert err.value.code == wincert.NTE_SILENT_CONTEXT, f"0x{err.value.code & 0xFFFFFFFF:08X}"
+    assert wincert.key_state(wincert.SOFTWARE, name) is None, "a chave não ficou no Windows"
+    # sem a proteção forte, o mesmo caminho silencioso funciona (é o que o CI usa nos outros testes)
+    hw, prot = wincert._try_import(wincert.SOFTWARE, name, key, False, None, "Prumo PDF", "teste", silent=True)
+    assert (hw, prot) == (False, False)
+    assert wincert.key_state(wincert.SOFTWARE, name)["exportable"] is False
+    assert wincert.delete_key(wincert.SOFTWARE, name)
+
+
 def test_remove_deletes_key_and_certificate(tmp_path, windows_store):
     import signing
     import wincert
