@@ -206,6 +206,9 @@ def _extract_zip(src: Path) -> Path:
             name = Path(info.filename)
             if name.is_absolute() or ".." in name.parts:   # nada fora da pasta temporária
                 continue
+            # Só o que a restauração usa: os PDFs e o registro dos favoritos. O resto do .zip nem é aberto.
+            if info.is_dir() or not (name.suffix.lower() == ".pdf" or name.as_posix().lower().endswith(META_DIR + "/library.json")):
+                continue
             z.extract(info, tmp)
     return tmp
 

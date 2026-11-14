@@ -66,6 +66,20 @@ def system_exe(name: str) -> str:
     return str(p) if os.name != "nt" or p.is_file() else name
 
 
+# O PowerShell aceita cinco caracteres como aspas simples: ' e as tipográficas ‘ ’ ‚ ‛.
+PS_SINGLE_QUOTES = "'\u2018\u2019\u201a\u201b"
+
+
+def ps_quote(text) -> str:
+    """
+    Texto entre aspas simples para um script do PowerShell. Dentro de aspas simples nada é interpretado e
+    qualquer uma das cinco aspas, repetida, vale o próprio caractere; sem repetir as tipográficas, um nome de
+    arquivo ou de pasta com ’ fecharia o texto e o resto seria executado como comando.
+    """
+    out = "".join(ch * 2 if ch in PS_SINGLE_QUOTES else ch for ch in str(text))
+    return "'" + out + "'"
+
+
 def which(name: str) -> Path | None:
     """
     Como o shutil.which, mas só nas pastas absolutas do PATH: nunca a pasta atual, nem "." ou

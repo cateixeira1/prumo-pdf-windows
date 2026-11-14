@@ -67,7 +67,8 @@ def prumo_exe(exe: str | None = None) -> str:
 
 
 def _q(text: str) -> str:
-    return "'" + str(text).replace("'", "''") + "'"
+    import winsys
+    return winsys.ps_quote(text)       # este script roda como administrador: nenhuma aspa pode fechar o texto
 
 
 def script(library_root: str | Path, exe: str, enable: bool) -> str:
