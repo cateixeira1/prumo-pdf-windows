@@ -172,6 +172,14 @@ def sanitize(name: str) -> str:
     return (s or tr("Documento"))[:150]
 
 
+_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+
+
+def valid_id(value) -> bool:
+    """Id de documento: letras, números, hífen e sublinhado (o Prumo cria UUIDs). Nada de barras ou pontos."""
+    return isinstance(value, str) and _ID_RE.fullmatch(value) is not None
+
+
 def signature(size: int, modified: float) -> str:
     return f"{size}-{int(modified)}"
 
@@ -398,7 +406,7 @@ class Library:
         if pdfops.is_encrypted(path):
             return {"locked": True, "page_count": pdfops.page_count_locked(path), "status": None,
                     "ocr_pages": [], "text": ""}
-        info = core.analyze_pdf(path)
+        info = core.analyze_pdf(path, with_text=True)    # uma passada só: classifica e guarda o texto
         if info.error:
             return {"error": info.error, "page_count": None, "status": None, "ocr_pages": [], "text": ""}
         kinds = [p.kind for p in info.pages]
@@ -411,10 +419,7 @@ class Library:
             status = TEXT_SCANNED
         else:
             status = TEXT_MIXED
-        try:
-            text = "\n".join(core.extract_text(path))
-        except Exception:
-            text = ""
+        text = "\n".join(info.texts or [])
         try:
             import signing
             signed = signing.signature_count(path)
@@ -460,8 +465,20 @@ class Library:
             data = json.loads(self.meta_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return []
-        return [d for d in data if isinstance(d, dict) and d.get("path") and d.get("id")] \
-            if isinstance(data, list) else []
+        if not isinstance(data, list):
+            return []
+        out = []
+        for d in data:
+            # O arquivo pode vir de outro aparelho ou de uma pasta compartilhada: o id vira nome de arquivo
+            # nas pastas do Prumo (texto extraído, versão para desfazer), então só entra se tiver formato de id.
+            if not isinstance(d, dict) or not isinstance(d.get("path"), str) or not d["path"] \
+                    or not valid_id(d.get("id")):
+                continue
+            for f in REF_FIELDS:
+                if d.get(f) is not None and not valid_id(d.get(f)):
+                    d = dict(d, **{f: None})
+            out.append(d)
+        return out
 
     def _load_meta(self) -> None:
         self._disk_stamp = self._stamp()

@@ -21,7 +21,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PYTHONIOENCODING: utf-8
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
 
       - name: Gerar o aplicativo e o instalador (setup.exe)
         id: build
@@ -42,9 +42,16 @@ jobs:
         shell: powershell
         run: |
           $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
-          Start-Process -FilePath "build\redist\tesseract-setup.exe" -ArgumentList "/S" -Wait
-          Copy-Item "tessdata\por.traineddata" "C:\Program Files\Tesseract-OCR\tessdata\" -Force
-          $env:Path = "C:\Program Files\Tesseract-OCR;$env:Path"
+          # O build.ps1 já rodou o instalador do Tesseract (conferido por SHA-256) para tirar o motor de dentro dele;
+          # o instalador não pode rodar duas vezes no mesmo computador. Os testes usam essa mesma instalação.
+          $tess = Get-ChildItem "build\work\tesseract_bundle" -Recurse -Filter tesseract.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $tess -and (Test-Path "C:\Program Files\Tesseract-OCR\tesseract.exe")) { $tess = Get-Item "C:\Program Files\Tesseract-OCR\tesseract.exe" }
+          if (-not $tess) { Write-Output "::error::Tesseract não encontrado depois do build."; exit 1 }
+          $tessDir = $tess.DirectoryName
+          Write-Output "Tesseract dos testes: $tessDir"
+          New-Item -ItemType Directory -Force "$tessDir\tessdata" | Out-Null
+          Copy-Item "tessdata\por.traineddata" "$tessDir\tessdata\" -Force
+          $env:Path = "$tessDir;$env:Path"
           & uv pip install --python .venv\Scripts\python.exe pytest pytest-timeout | Out-Null
           # -v mostra cada teste ao começar; um teste parado por mais de 5 min mostra onde estava e encerra.
           # O resultado é o código de saída do pytest: com "Stop", qualquer linha na saída de erro (um aviso
@@ -92,11 +99,12 @@ jobs:
           Remove-Item Env:PRUMO_BENCH
           & .venv\Scripts\python.exe tools\importtime_report.py "$out\importtime_raw.txt" 35 *>&1 | Out-File -Encoding utf8 "$out\importtime.txt"
           Remove-Item "$out\importtime_raw.txt" -ErrorAction SilentlyContinue
-          # Tesseract instalado (para decidir o que levar no instalador)
-          "`n=== Tesseract instalado ===" | Out-File -Append -Encoding utf8 "$out\size.txt"
+          # Tesseract que vai no instalador
+          "`n=== Tesseract ===" | Out-File -Append -Encoding utf8 "$out\size.txt"
           if (Test-Path "build\redist\tesseract-setup.exe") { "tesseract-setup.exe: {0:N1} MB" -f ((Get-Item "build\redist\tesseract-setup.exe").Length / 1MB) | Out-File -Append -Encoding utf8 "$out\size.txt" }
-          if (Test-Path "C:\Program Files\Tesseract-OCR") {
-              & .venv\Scripts\python.exe tools\size_report.py "C:\Program Files\Tesseract-OCR" 25 *>&1 | Out-File -Append -Encoding utf8 "$out\size.txt"
+          if (Test-Path "dist\PrumoPDF\tesseract") {
+              "--- motor que vai dentro do aplicativo (dist\PrumoPDF\tesseract) ---" | Out-File -Append -Encoding utf8 "$out\size.txt"
+              & .venv\Scripts\python.exe tools\size_report.py "dist\PrumoPDF\tesseract" 12 *>&1 | Out-File -Append -Encoding utf8 "$out\size.txt"
           }
 
       - name: Capturas de tela (Windows, fonte Segoe UI)

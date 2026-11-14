@@ -1,8 +1,8 @@
 ﻿; Instalador do Prumo PDF (Inno Setup 6.3+ ou 7).
-; Gerado pelo build.ps1. Instala o aplicativo e, se ainda não houver, o Tesseract (UB Mannheim).
+; Gerado pelo build.ps1. O motor de OCR (Tesseract) vai dentro da pasta do aplicativo ({app}\tesseract).
 
 #define AppName "Prumo PDF"
-#define AppVersion "1.15.0"
+#define AppVersion "1.15.1"
 #define AppExe "PrumoPDF.exe"
 
 [Setup]
@@ -39,7 +39,6 @@ Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; GroupDesc
 
 [Files]
 Source: "..\dist\PrumoPDF\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "redist\tesseract-setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Check: not TesseractInstalled
 
 [Icons]
 ; O AppUserModelID é o mesmo que o app declara ao abrir (main.py). Assim o Windows liga a janela
@@ -131,14 +130,4 @@ Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.htm\shell\PrumoConv
 Root: HKA; Subkey: "Software\Classes\SystemFileAssociations\.htm\shell\PrumoConvert\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" --convert ""%1"""
 
 [Run]
-Filename: "{tmp}\tesseract-setup.exe"; Parameters: "/S"; \
-    StatusMsg: "Instalando o motor de OCR (Tesseract)... isso pode levar um minuto."; \
-    Check: not TesseractInstalled; Flags: waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "Abrir o Prumo PDF"; Flags: nowait postinstall skipifsilent
-
-[Code]
-function TesseractInstalled: Boolean;
-begin
-  Result := FileExists(ExpandConstant('{commonpf64}\Tesseract-OCR\tesseract.exe'))
-         or RegKeyExists(HKLM64, 'SOFTWARE\Tesseract-OCR');
-end;

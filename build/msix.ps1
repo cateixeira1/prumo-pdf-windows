@@ -44,44 +44,49 @@ New-Item -ItemType Directory -Force -Path "$stage\Assets" | Out-Null
 # Tesseract dentro do pacote: o MSIX não pode rodar o instalador dele, então o instalador oficial (UB Mannheim)
 # é aberto aqui, numa pasta temporária, e só o motor (exe + DLLs) vai para o pacote. Os modelos de idioma
 # já estão em _internal\tessdata.
-$tessSetup = "build\redist\tesseract-setup.exe"
-if (-not (Test-Path $tessSetup)) { Fail "Falta $tessSetup (o build.ps1 baixa)." }
-$tessTmp = Join-Path $Root "build\work\tesseract_bundle"
-function Find-Tess {
-    $e = Get-ChildItem $tessTmp -Recurse -Filter tesseract.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($e) { return $e }
-    foreach ($d in @("$env:ProgramFiles\Tesseract-OCR", "${env:ProgramFiles(x86)}\Tesseract-OCR")) {
-        if (Test-Path "$d\tesseract.exe") { return (Get-Item "$d\tesseract.exe") }
+if (Test-Path "$stage\tesseract\tesseract.exe") {
+    # Desde a 1.15.1 o build.ps1 já põe o motor (conferido por SHA-256) em dist\PrumoPDF\tesseract.
+    Write-Host "Tesseract: já veio dentro do aplicativo (build.ps1)."
+} else {
+    $tessSetup = "build\redist\tesseract-setup.exe"
+    if (-not (Test-Path $tessSetup)) { Fail "Falta $tessSetup (o build.ps1 baixa)." }
+    $tessTmp = Join-Path $Root "build\work\tesseract_bundle"
+    function Find-Tess {
+        $e = Get-ChildItem $tessTmp -Recurse -Filter tesseract.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($e) { return $e }
+        foreach ($d in @("$env:ProgramFiles\Tesseract-OCR", "${env:ProgramFiles(x86)}\Tesseract-OCR")) {
+            if (Test-Path "$d\tesseract.exe") { return (Get-Item "$d\tesseract.exe") }
+        }
+        return $null
     }
-    return $null
-}
-# O instalador só pode rodar uma vez por computador (na segunda ele fica esperando resposta), então só roda
-# se o tesseract.exe ainda não estiver em lugar nenhum. Ele pode ignorar /D, por isso Find-Tess olha os dois lugares.
-$tessExe = Find-Tess
-if (-not $tessExe) {
-    $p = Start-Process -FilePath $tessSetup -ArgumentList "/S", "/D=$tessTmp" -PassThru
-    if (-not $p.WaitForExit(300000)) { $p.Kill(); Fail "O instalador do Tesseract não terminou em 5 minutos." }
+    # O instalador só pode rodar uma vez por computador (na segunda ele fica esperando resposta), então só roda
+    # se o tesseract.exe ainda não estiver em lugar nenhum. Ele pode ignorar /D, por isso Find-Tess olha os dois lugares.
     $tessExe = Find-Tess
+    if (-not $tessExe) {
+        $p = Start-Process -FilePath $tessSetup -ArgumentList "/S", "/D=$tessTmp" -PassThru
+        if (-not $p.WaitForExit(300000)) { $p.Kill(); Fail "O instalador do Tesseract não terminou em 5 minutos." }
+        $tessExe = Find-Tess
+    }
+    if (-not $tessExe) { Fail "Não consegui extrair o Tesseract." }
+    $tessSrc = $tessExe.DirectoryName
+    Write-Host "Tesseract em: $tessSrc"
+    $tessDest = Join-Path $stage "tesseract"
+    New-Item -ItemType Directory -Force -Path $tessDest | Out-Null
+    Get-ChildItem $tessSrc -Force | Where-Object { $_.Name -notin @("tessdata", "doc", "unins000.exe", "unins000.dat") -and $_.Name -notlike "unins*" } |
+        ForEach-Object { Copy-Item $_.FullName $tessDest -Recurse -Force }
+    # O Prumo só chama o tesseract.exe. As ferramentas de treinamento do instalador (lstmtraining, text2image etc.)
+    # não são usadas e pesam bastante: ficam de fora. As bibliotecas (.dll) permanecem todas, para não arriscar.
+    Get-ChildItem $tessDest -Filter *.exe | Where-Object { $_.Name -ne "tesseract.exe" } | ForEach-Object {
+        Write-Host ("  fora do pacote: {0} ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+        Remove-Item $_.FullName -Force
+    }
+    # a biblioteca de execução do Visual C++, caso o computador não tenha
+    foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+        $src = Join-Path $stage "_internal\$dll"
+        if ((Test-Path $src) -and -not (Test-Path "$tessDest\$dll")) { Copy-Item $src $tessDest }
+    }
+    Write-Host ("Tesseract no pacote: {0:N0} MB" -f ((Get-ChildItem $tessDest -Recurse | Measure-Object Length -Sum).Sum / 1MB))
 }
-if (-not $tessExe) { Fail "Não consegui extrair o Tesseract." }
-$tessSrc = $tessExe.DirectoryName
-Write-Host "Tesseract em: $tessSrc"
-$tessDest = Join-Path $stage "tesseract"
-New-Item -ItemType Directory -Force -Path $tessDest | Out-Null
-Get-ChildItem $tessSrc -Force | Where-Object { $_.Name -notin @("tessdata", "doc", "unins000.exe", "unins000.dat") -and $_.Name -notlike "unins*" } |
-    ForEach-Object { Copy-Item $_.FullName $tessDest -Recurse -Force }
-# O Prumo só chama o tesseract.exe. As ferramentas de treinamento do instalador (lstmtraining, text2image etc.)
-# não são usadas e pesam bastante: ficam de fora. As bibliotecas (.dll) permanecem todas, para não arriscar.
-Get-ChildItem $tessDest -Filter *.exe | Where-Object { $_.Name -ne "tesseract.exe" } | ForEach-Object {
-    Write-Host ("  fora do pacote: {0} ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
-    Remove-Item $_.FullName -Force
-}
-# a biblioteca de execução do Visual C++, caso o computador não tenha
-foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
-    $src = Join-Path $stage "_internal\$dll"
-    if ((Test-Path $src) -and -not (Test-Path "$tessDest\$dll")) { Copy-Item $src $tessDest }
-}
-Write-Host ("Tesseract no pacote: {0:N0} MB" -f ((Get-ChildItem $tessDest -Recurse | Measure-Object Length -Sum).Sum / 1MB))
 
 $py = Join-Path $Root ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { $py = "python" }

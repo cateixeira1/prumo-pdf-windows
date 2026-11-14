@@ -256,6 +256,71 @@ def _strip_html(html: str) -> str:
     return "\n".join(re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()).strip()
 
 
+_HTML_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp"}
+
+
+def _local_image(src: str, base: Path | None) -> Path | None:
+    """A imagem de um HTML, só quando é um arquivo de imagem dentro da pasta do próprio HTML."""
+    import re
+    from urllib.parse import unquote
+
+    if base is None or not src:
+        return None
+    # Com esquema (http:, https:, file:, ftp:) ou letra de unidade (C:), ou começando por / ou \ (inclusive
+    # \\servidor\pasta e //servidor/pasta): fica de fora.
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.\-]*:", src) or src[0] in "/\\":
+        return None
+    rel = unquote(src.split("#", 1)[0].split("?", 1)[0])
+    if not rel or rel[0] in "/\\" or re.match(r"^[A-Za-z]:", rel):
+        return None
+    try:
+        root = Path(base).resolve()
+        target = (root / rel).resolve()
+        target.relative_to(root)                  # "..\..\outro lugar" cai aqui
+    except (OSError, ValueError):
+        return None
+    if target.suffix.lower() not in _HTML_IMAGE_EXT or not target.is_file():
+        return None
+    return target
+
+
+def _safe_images(content: str, base: Path | None) -> str:
+    """
+    Deixa no HTML só as imagens que não fazem o Prumo sair da pasta do arquivo: as embutidas (data:) e as
+    que estão na pasta do próprio HTML. As outras são retiradas: uma imagem com endereço da internet seria
+    baixada na conversão (quem mandou o arquivo saberia quando e de onde ele foi aberto), e um caminho de
+    outra pasta ou de outro computador (pasta de rede) seria aberto.
+    """
+    import html as h
+    import re
+
+    src_re = re.compile(r"""(?is)\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""")
+
+    def fix(m):
+        tag = m.group(0)
+        found = src_re.search(tag)
+        if not found:
+            return ""
+        src = h.unescape(next(g for g in found.groups() if g is not None)).strip()
+        if re.match(r"(?i)^data:image/(png|jpe?g|gif|bmp|webp);base64,", src):
+            return tag
+        local = _local_image(src, base)
+        if local is None:
+            return ""
+        return tag[:found.start()] + 'src="' + h.escape(local.as_posix(), quote=True) + '"' + tag[found.end():]
+
+    return re.sub(r"(?is)<img\b[^>]*>", fix, content)
+
+
+def _no_network(pdf) -> None:
+    """Segunda trava: o fpdf2 fica proibido de buscar qualquer coisa na internet."""
+    try:
+        from fpdf.enums import ResourceAccessPolicy
+        pdf.resource_access_policy = ResourceAccessPolicy.LOCAL_FILES
+    except Exception:  # noqa: BLE001 - versão do fpdf2 sem essa opção: vale a limpeza das imagens
+        pass
+
+
 def html_to_pdf(html: str, dest: Path, base: Path | None = None) -> None:
     """HTML simples (títulos, negrito, listas, tabelas, imagens). Se o HTML for complexo demais, fica o texto."""
     import re
@@ -263,14 +328,9 @@ def html_to_pdf(html: str, dest: Path, base: Path | None = None) -> None:
     body = re.search(r"(?is)<body[^>]*>(.*)</body>", html)
     content = body.group(1) if body else html
     content = re.sub(r"(?is)<(script|style|head|meta|link)[^>]*>.*?</\1>|<(meta|link)[^>]*>", "", content)
-    if base is not None:   # imagens com caminho relativo
-        def fix(m):
-            src = m.group(2)
-            if re.match(r"(?i)^(https?:|data:|[a-z]:|/)", src):
-                return m.group(0)
-            return f"{m.group(1)}{(base / src).as_posix()}{m.group(3)}"
-        content = re.sub(r'(?i)(<img[^>]*?src=["\'])([^"\']+)(["\'])', fix, content)
+    content = _safe_images(content, base)
     pdf, family = _new_pdf(dest.stem)
+    _no_network(pdf)
     try:
         from fpdf.fonts import FontFace
         black = {f"h{n}": FontFace(color=(0, 0, 0), emphasis="BOLD", size_pt=size)
@@ -347,52 +407,54 @@ def find_libreoffice() -> Path | None:
 # os eventos. Se o Office não aceitar a trava, o script para sem abrir o arquivo.
 MACROS_OFF = 3
 
+# Os caminhos do arquivo e do PDF chegam ao script por variáveis de ambiente (PRUMO_SRC e PRUMO_DST), nunca
+# escritos dentro dele: um nome de arquivo com aspas (o PowerShell aceita também ‘ ’ ‚ ‛ como aspas simples)
+# fecharia o texto e o resto do nome seria executado como comando.
 _PS = {
     "Word.Application": r"""
 $app = New-Object -ComObject Word.Application
-try {{
+try {
   $app.AutomationSecurity = 3
-  if ($app.AutomationSecurity -ne 3) {{ throw 'macro-lock' }}
+  if ($app.AutomationSecurity -ne 3) { throw 'macro-lock' }
   $app.Visible = $false; $app.DisplayAlerts = 0
-  $d = $app.Documents.Open('{src}', $false, $true, $false)
-  $d.ExportAsFixedFormat('{dst}', 17)
+  $d = $app.Documents.Open($env:PRUMO_SRC, $false, $true, $false)
+  $d.ExportAsFixedFormat($env:PRUMO_DST, 17)
   $d.Close([ref]0)
-}} finally {{ $app.Quit() }}
+} finally { $app.Quit() }
 """,
     "Excel.Application": r"""
 $app = New-Object -ComObject Excel.Application
-try {{
+try {
   $app.AutomationSecurity = 3
-  if ($app.AutomationSecurity -ne 3) {{ throw 'macro-lock' }}
+  if ($app.AutomationSecurity -ne 3) { throw 'macro-lock' }
   $app.EnableEvents = $false
   $app.Visible = $false; $app.DisplayAlerts = $false
-  $b = $app.Workbooks.Open('{src}', 0, $true)
-  $b.ExportAsFixedFormat(0, '{dst}')
+  $b = $app.Workbooks.Open($env:PRUMO_SRC, 0, $true)
+  $b.ExportAsFixedFormat(0, $env:PRUMO_DST)
   $b.Close($false)
-}} finally {{ $app.Quit() }}
+} finally { $app.Quit() }
 """,
     "PowerPoint.Application": r"""
 $app = New-Object -ComObject PowerPoint.Application
-try {{
+try {
   $app.AutomationSecurity = 3
-  if ($app.AutomationSecurity -ne 3) {{ throw 'macro-lock' }}
-  $p = $app.Presentations.Open('{src}', -1, 0, 0)
-  $p.SaveAs('{dst}', 32)
+  if ($app.AutomationSecurity -ne 3) { throw 'macro-lock' }
+  $p = $app.Presentations.Open($env:PRUMO_SRC, -1, 0, 0)
+  $p.SaveAs($env:PRUMO_DST, 32)
   $p.Close()
-}} finally {{ $app.Quit() }}
+} finally { $app.Quit() }
 """,
 }
 
 
 def office_to_pdf(progid: str, src: Path, dest: Path, timeout=180) -> None:
     """Usa o Office instalado (a mesma conversão do "Salvar como PDF"), sem abrir janelas."""
-    q = lambda p: str(p).replace("'", "''")  # noqa: E731
-    script = _PS[progid].format(src=q(src.resolve()), dst=q(dest.resolve()))
     flags = 0x08000000 if sys.platform == "win32" else 0   # sem janela de console
     import winsys
+    env = dict(os.environ, PRUMO_SRC=str(src.resolve()), PRUMO_DST=str(dest.resolve()))
     proc = subprocess.run([winsys.powershell(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                           "-Command", script], capture_output=True, text=True, timeout=timeout,
-                          creationflags=flags)
+                           "-Command", _PS[progid]], capture_output=True, text=True, timeout=timeout,
+                          creationflags=flags, env=env)
     if proc.returncode != 0 or not dest.exists():
         msg = (proc.stderr or proc.stdout or "").strip().splitlines()
         from i18n import tr, trf

@@ -1,0 +1,22 @@
+# SHA-256 do que o build.ps1 baixa. O download é recusado se a soma não bater.
+# Para trocar de versão: mude o endereço no build.ps1, baixe o arquivo, confira a origem e troque a soma aqui.
+#
+# Instalador do Tesseract (UB Mannheim), versão 5.4.0.20240606:
+c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9  tesseract-ocr-w64-setup-5.4.0.20240606.exe
+#
+# Modelos de idioma, etiqueta 4.1.0 de github.com/tesseract-ocr/tessdata e tessdata_best:
+fc05d89ab31d8b4e226910f16a8bcbf78e43bae3e2580bb5feefd052efdab363  tessdata/chi_sim.traineddata
+559067dc0f7c94788884742129d66a0117dde7f4ff12b263d92147173497db14  tessdata/chi_tra.traineddata
+222fb5ad1ab131f7e8901943d6e3a8e733af30db36c2ef21e4dafbdda1aa39ca  tessdata/dan.traineddata
+896b3b4956503ab9daa10285db330881b2d74b70d889b79262cc534b9ec699a4  tessdata/deu.traineddata
+daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047  tessdata/eng.traineddata
+4facea6a34f094af267a002eb12695472c79363b72bac204132b9f6a6df283f1  tessdata/fin.traineddata
+eac01c1d72540d6090facb7b2f42dd0a2ee8fc57c5be1b20548ae668e2761913  tessdata/fra.traineddata
+6f416b902d129d8cc28e99c33244034b1cf52549e8560f6320b06d317852159a  tessdata/jpn.traineddata
+b859e4de24d2d23900d993d74819d33339255414057b5098dad2819a1894aa22  tessdata/nor.traineddata
+e19f2ae860792fdf372cf48d8ce70ae5da3c4052962fe22e9de1f680c374bb0e  tessdata/osd.traineddata
+016c6a371bb1e4c48fe521908cf3ba3d751fade0ab846ad5d4086b563f5c528c  tessdata/por.traineddata
+0b0fcbb4665189e01ab8019e591f014dd7260460de072543edd4b2cb4ede7c96  tessdata/spa.traineddata
+24e2dd15cc0088d211c5f1bd49971e600317f201502deadbc417f0ffd6c9a6f8  tessdata/swe.traineddata
+8280aed0782fe27257a68ea10fe7ef324ca0f8d85bd2fd145d1c2b560bcb66ba  tessdata_best/eng.traineddata
+711de9dbb8052067bd42f16b9119967f30bada80d57e2ef24f65d09f531adb04  tessdata_best/por.traineddata

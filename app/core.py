@@ -17,11 +17,12 @@ import re
 import shutil
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_NAME = "Prumo PDF"
-APP_VERSION = "1.15.0"
+APP_VERSION = "1.15.1"
 
 # --- Critérios de classificação de página -----------------------------------
 # São heurísticas, não regras exatas. Ficam aqui para serem ajustadas com
@@ -193,6 +194,7 @@ class DocInfo:
     path: Path
     pages: list[PageInfo] = field(default_factory=list)
     error: str | None = None
+    texts: list[str] | None = None        # texto de cada página, quando pedido (analyze_pdf(..., with_text=True))
 
     @property
     def page_count(self) -> int:
@@ -253,8 +255,14 @@ def open_error_message(exc: Exception) -> str:
     return __import__("i18n").trf("Não foi possível abrir o PDF ({}).", exc)
 
 
-def analyze_pdf(path: str | Path) -> DocInfo:
-    """Classifica cada página. Não altera o arquivo."""
+def analyze_pdf(path: str | Path, with_text: bool = False) -> DocInfo:
+    """
+    Classifica cada página. Não altera o arquivo. Com `with_text`, guarda também o texto de cada página em
+    `info.texts` (o mesmo que extract_text devolve), sem ler o PDF de novo.
+
+    O PDFium só atende uma chamada por vez. A trava é solta entre uma página e outra: num PDF grande
+    analisado em segundo plano, o leitor e as miniaturas entram no meio em vez de esperar o documento todo.
+    """
     import pypdfium2 as pdfium
     import pypdfium2.raw as pdfium_c
 
@@ -265,8 +273,11 @@ def analyze_pdf(path: str | Path) -> DocInfo:
         except Exception as exc:  # senha, arquivo inválido etc.
             info.error = open_error_message(exc)
             return info
-        try:
-            for i in range(len(pdf)):
+        total = len(pdf)
+    texts: list[str] = []
+    try:
+        for i in range(total):
+            with PDFIUM_LOCK:
                 page = pdf[i]
                 try:
                     textpage = page.get_textpage()
@@ -279,12 +290,18 @@ def analyze_pdf(path: str | Path) -> DocInfo:
                     invisible = _has_invisible_text(page, pdfium_c) if chars else False
                 finally:
                     page.close()
-                info.pages.append(
-                    PageInfo(i + 1, chars, round(coverage, 3), invisible,
-                             classify(chars, coverage, invisible))
-                )
-        finally:
+            time.sleep(0)       # cede a vez: sem isto, esta linha retoma a trava antes de quem está esperando
+            if with_text:
+                texts.append(text)
+            info.pages.append(
+                PageInfo(i + 1, chars, round(coverage, 3), invisible,
+                         classify(chars, coverage, invisible))
+            )
+    finally:
+        with PDFIUM_LOCK:
             pdf.close()
+    if with_text:
+        info.texts = texts
     return info
 
 

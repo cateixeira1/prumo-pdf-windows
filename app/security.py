@@ -1,7 +1,7 @@
 """
 Senha para abrir o Prumo.
 
-A senha não é guardada: só um resumo dela (PBKDF2-SHA256, 200 mil rodadas, com um valor
+A senha não é guardada: só um resumo dela (PBKDF2-SHA256, 600 mil rodadas, com um valor
 aleatório próprio), suficiente para conferir a senha digitada. A trava protege a tela do
 Prumo; os PDFs continuam como arquivos comuns na pasta da biblioteca. Para proteger um
 arquivo em si, há "Proteger com senha" na tela do PDF (criptografia padrão de PDF).
@@ -14,7 +14,7 @@ import hashlib
 import hmac
 import os
 
-ITERATIONS = 200_000
+ITERATIONS = 600_000        # recomendação atual da OWASP para PBKDF2-HMAC-SHA256; senhas antigas (200 mil) continuam valendo
 
 
 def hash_password(password: str, iterations: int = ITERATIONS) -> str:

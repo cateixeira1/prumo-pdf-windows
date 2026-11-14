@@ -6,7 +6,7 @@
 #   2. cria um ambiente Python 3.12 isolado na pasta .venv (não mexe no resto do PC);
 #   3. baixa os modelos de idioma do Tesseract (português, inglês e orientação);
 #   4. empacota o aplicativo com o PyInstaller e confere o pacote;
-#   5. baixa o instalador oficial do Tesseract (UB Mannheim);
+#   5. baixa o instalador oficial do Tesseract (UB Mannheim), confere a soma e põe o motor dentro do aplicativo;
 #   6. instala o Inno Setup, se preciso, e gera o instalador final em dist\.
 
 param([switch]$CI)   # -CI: compilação na nuvem (GitHub Actions), sem abrir o Explorador no fim
@@ -39,27 +39,39 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
     & uv venv .venv --python 3.12
     if ($LASTEXITCODE -ne 0) { Fail "Falha ao criar o ambiente Python." }
 }
-& uv pip install --python .venv\Scripts\python.exe -r build\requirements.txt
-if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar as bibliotecas." }
+# Versões exatas, com a soma SHA-256 de cada arquivo (build\requirements.lock): a montagem de hoje e a de
+# amanhã usam as mesmas bibliotecas, e um pacote trocado na origem é recusado.
+& uv pip install --python .venv\Scripts\python.exe --require-hashes -r build\requirements.lock
+if ($LASTEXITCODE -ne 0) { Fail "Falha ao instalar as bibliotecas (versão ou soma SHA-256 diferente do esperado)." }
 $Py = Join-Path $Root ".venv\Scripts\python.exe"
 
 # ---------------------------------------------------------------- 3. modelos de idioma
 Step "Baixando os modelos de idioma do Tesseract"
+# Tudo o que vem da internet tem a soma SHA-256 anotada em build\checksums.sha256. Se o arquivo baixado não
+# bater com a soma, a montagem para: um arquivo trocado no caminho (ou na origem) não entra no instalador.
+$Sums = @{}
+Get-Content "build\checksums.sha256" | ForEach-Object {
+    if ($_ -match '^([0-9a-fA-F]{64})\s+(\S+)$') { $Sums[$Matches[2]] = $Matches[1].ToLower() }
+}
+function Test-Sum($path, $key) {
+    if (-not $Sums.ContainsKey($key)) { Fail "Falta a soma SHA-256 de $key em build\checksums.sha256." }
+    return ((Get-FileHash -Algorithm SHA256 -Path $path).Hash.ToLower() -eq $Sums[$key])
+}
 function Get-Model($repo, $file, $destDir) {
     $dest = Join-Path $destDir $file
     if ((Test-Path $dest) -and ((Get-Item $dest).Length -gt 100000)) { return }
-    $urls = @(
-        "https://github.com/tesseract-ocr/$repo/raw/4.1.0/$file",
-        "https://github.com/tesseract-ocr/$repo/raw/main/$file"
-    )
-    foreach ($u in $urls) {
-        try {
-            Write-Host "  $repo/$file"
-            Invoke-WebRequest -Uri $u -OutFile $dest -UseBasicParsing
-            if ((Get-Item $dest).Length -gt 100000) { return }
-        } catch { }
+    # Versão fixa (etiqueta 4.1.0), sem reserva no ramo principal, que muda com o tempo.
+    $u = "https://github.com/tesseract-ocr/$repo/raw/4.1.0/$file"
+    $tmp = "$dest.download"
+    try {
+        Write-Host "  $repo/$file"
+        Invoke-WebRequest -Uri $u -OutFile $tmp -UseBasicParsing
+    } catch { Remove-Item $tmp -ErrorAction SilentlyContinue; Fail "Não foi possível baixar $repo/$file." }
+    if (-not (Test-Sum $tmp "$repo/$file")) {
+        Remove-Item $tmp -Force
+        Fail "O arquivo $repo/$file baixado não confere com a soma SHA-256 esperada."
     }
-    Fail "Não foi possível baixar $repo/$file."
+    Move-Item -Force $tmp $dest
 }
 foreach ($d in @("tessdata", "tessdata_best")) {
     New-Item -ItemType Directory -Force -Path $d | Out-Null
@@ -99,18 +111,74 @@ if (Test-Path $report) { Get-Content $report | Write-Host }
 if ($p.ExitCode -ne 0) { Fail "O pacote não passou na conferência (veja acima)." }
 
 # ---------------------------------------------------------------- 5. Tesseract
-Step "Baixando o instalador oficial do Tesseract (UB Mannheim)"
+Step "Baixando o instalador oficial do Tesseract (UB Mannheim), versão fixa e conferida"
 New-Item -ItemType Directory -Force -Path "build\redist" | Out-Null
+$tessName = "tesseract-ocr-w64-setup-5.4.0.20240606.exe"
+$tessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/$tessName"
 $tessSetup = "build\redist\tesseract-setup.exe"
+if ((Test-Path $tessSetup) -and -not (Test-Sum $tessSetup $tessName)) { Remove-Item $tessSetup -Force }
 if (-not (Test-Path $tessSetup)) {
-    $headers = @{ "User-Agent" = "PrumoPDF-build" }
-    if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
-    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest" -Headers $headers
-    $asset = $rel.assets | Where-Object { $_.name -match "w64-setup.*\.exe$" } | Select-Object -First 1
-    if (-not $asset) { Fail "Não encontrei o instalador do Tesseract na página de versões da UB Mannheim." }
-    Write-Host "  $($asset.name)"
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tessSetup -UseBasicParsing
+    Write-Host "  $tessName"
+    Invoke-WebRequest -Uri $tessUrl -OutFile $tessSetup -UseBasicParsing
+    if (-not (Test-Sum $tessSetup $tessName)) {
+        Remove-Item $tessSetup -Force
+        Fail "O instalador do Tesseract baixado não confere com a soma SHA-256 esperada."
+    }
 }
+
+# O motor de OCR vai dentro da pasta do Prumo (dist\PrumoPDF\tesseract), como já era no pacote da Microsoft
+# Store: o instalador do Prumo não roda mais o instalador do Tesseract no computador de quem instala, e ficam
+# de fora as ferramentas de treinamento e os modelos de idioma do Tesseract, que o Prumo não usa (os modelos
+# do Prumo estão em _internal\tessdata).
+Step "Colocando o motor de OCR dentro do aplicativo"
+$tessTmp = Join-Path $Root "build\work\tesseract_bundle"
+function Find-Tess {
+    $e = Get-ChildItem $tessTmp -Recurse -Filter tesseract.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($e) { return $e }
+    foreach ($d in @("$env:ProgramFiles\Tesseract-OCR", "${env:ProgramFiles(x86)}\Tesseract-OCR")) {
+        if (Test-Path "$d\tesseract.exe") { return (Get-Item "$d\tesseract.exe") }
+    }
+    return $null
+}
+# O instalador do Tesseract só pode rodar uma vez por computador (na segunda ele fica esperando resposta), então
+# só roda se o tesseract.exe ainda não estiver em lugar nenhum. Ele pode ignorar /D: Find-Tess olha os dois lugares.
+$tessExe = Find-Tess
+if (-not $tessExe) {
+    $p = Start-Process -FilePath $tessSetup -ArgumentList "/S", "/D=$tessTmp" -PassThru
+    if (-not $p.WaitForExit(300000)) { $p.Kill(); Fail "O instalador do Tesseract não terminou em 5 minutos." }
+    $tessExe = Find-Tess
+}
+if (-not $tessExe) { Fail "Não consegui extrair o Tesseract." }
+$tessSrc = $tessExe.DirectoryName
+Write-Host "Tesseract em: $tessSrc"
+$tessDest = Join-Path $Root "dist\PrumoPDF\tesseract"
+Remove-Item $tessDest -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $tessDest | Out-Null
+Get-ChildItem $tessSrc -Force | Where-Object { $_.Name -notin @("tessdata", "doc") -and $_.Name -notlike "unins*" } |
+    ForEach-Object { Copy-Item $_.FullName $tessDest -Recurse -Force }
+# O Prumo só chama o tesseract.exe. As bibliotecas (.dll) permanecem todas, para não arriscar.
+Get-ChildItem $tessDest -Filter *.exe | Where-Object { $_.Name -ne "tesseract.exe" } | ForEach-Object {
+    Write-Host ("  fora do pacote: {0} ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB))
+    Remove-Item $_.FullName -Force
+}
+# a biblioteca de execução do Visual C++, caso o computador não tenha
+foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+    $src = Join-Path $Root "dist\PrumoPDF\_internal\$dll"
+    if ((Test-Path $src) -and -not (Test-Path "$tessDest\$dll")) { Copy-Item $src $tessDest }
+}
+Write-Host ("Tesseract no aplicativo: {0:N0} MB" -f ((Get-ChildItem $tessDest -Recurse | Measure-Object Length -Sum).Sum / 1MB))
+
+# Conferência: o aplicativo empacotado precisa achar e rodar o motor que vai dentro dele.
+$report2 = Join-Path $env:TEMP "prumo_selftest_tess.json"
+Remove-Item $report2 -ErrorAction SilentlyContinue
+$p = Start-Process -FilePath "dist\PrumoPDF\PrumoPDF.exe" -ArgumentList "--self-test", "`"$report2`"" -Wait -PassThru
+if ($p.ExitCode -ne 0) { Fail "O pacote não passou na conferência depois de incluir o Tesseract." }
+if ((Get-Content $report2 -Raw) -notmatch "PrumoPDF[^`"]*tesseract[^`"]*tesseract\.exe") {
+    Get-Content $report2 | Write-Host
+    Fail "O aplicativo não está usando o Tesseract que vai dentro dele."
+}
+& "$tessDest\tesseract.exe" --version | Select-Object -First 1 | Write-Host
+if ($LASTEXITCODE -ne 0) { Fail "O tesseract.exe incluído não rodou." }
 
 # ---------------------------------------------------------------- 6. Inno Setup
 Step "Gerando o instalador"
