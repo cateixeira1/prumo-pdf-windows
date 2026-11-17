@@ -376,3 +376,31 @@ def test_signed_or_locked_pdf_is_refused(tmp_path):
     finally:
         w.hub.shutdown()
         w.close()
+
+
+def test_boxes_made_on_the_iphone_are_read_and_replaced(tmp_path):
+    """O iPhone grava a caixa de texto como /FreeText (o PDFKit pode não guardar o /PrumoStyle: vale o /DA) e as
+    marcas como traços (/Ink) com /NM "prumo-mk-"."""
+    import pikepdf
+    src = digital_pdf(tmp_path / "p.pdf", 1)
+    with pikepdf.open(str(src), allow_overwriting_input=True) as pdf:
+        page = pdf.pages[0]
+        page.obj.Annots = pikepdf.Array([
+            pdf.make_indirect(pikepdf.Dictionary(
+                Type=pikepdf.Name.Annot, Subtype=pikepdf.Name.FreeText, Rect=[100, 700, 220, 720],
+                NM=pikepdf.String("prumo-tx-aaaaaaaaaaaaaaaa"), Contents=pikepdf.String("Feito no iPhone"),
+                DA=pikepdf.String("/Helvetica-Bold 14 Tf 0.05 0.2 0.62 rg"))),
+            pdf.make_indirect(pikepdf.Dictionary(
+                Type=pikepdf.Name.Annot, Subtype=pikepdf.Name.Ink, Rect=[300, 700, 320, 720],
+                NM=pikepdf.String("prumo-mk-bbbbbbbbbbbbbbbb"), Contents=pikepdf.String("✗"),
+                InkList=[[304, 704, 316, 716]])),
+        ])
+        pdf.save(str(src))
+    boxes = forms.load(src).boxes
+    assert [(b.kind, b.text, b.bold, b.size, b.color) for b in boxes] == [
+        ("text", "Feito no iPhone", True, 14.0, "blue"), ("cross", "", False, 20.0, "black")]
+    forms.save(src, {}, boxes)
+    with pikepdf.open(str(src)) as pdf:
+        subs = [str(a.Subtype) for a in pdf.pages[0].Annots]
+    assert subs == ["/FreeText", "/FreeText"]          # trocadas pela forma do Windows, sem duplicar
+    assert [b.id for b in forms.load(src).boxes] == ["prumo-tx-aaaaaaaaaaaaaaaa", "prumo-mk-bbbbbbbbbbbbbbbb"]

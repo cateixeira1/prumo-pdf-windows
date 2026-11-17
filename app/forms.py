@@ -461,24 +461,50 @@ def _fields(pdf) -> tuple[list[Field], bool, bool]:
     return fields, xfa, xfa and not fields
 
 
+def _is_prumo_box(a) -> bool:
+    """Caixa do Prumo: texto (/FreeText "prumo-tx-") ou marca ("prumo-mk-": /FreeText no Windows, /Ink ou
+    /Circle no iPhone)."""
+    try:
+        nm = str(a.get("/NM", ""))
+        sub = a.get("/Subtype")
+    except Exception:  # noqa: BLE001
+        return False
+    if nm.startswith(PREFIX_MARK):
+        return sub in ("/FreeText", "/Ink", "/Circle", "/Square")
+    return nm.startswith(PREFIX_TEXT) and sub == "/FreeText"
+
+
 def _boxes(pdf, geos) -> list[Box]:
     out = []
     for i, page in enumerate(pdf.pages):
         for a in page.obj.get("/Annots", []) or []:
             try:
-                if a.get("/Subtype") != "/FreeText":
+                if not _is_prumo_box(a):
                     continue
                 nm = str(a.get("/NM", ""))
-                if not nm.startswith((PREFIX_TEXT, PREFIX_MARK)):
-                    continue
                 style = _parse_style(str(a.get("/PrumoStyle", "") or a.get("/DS", "")))
+                if "size" not in style and "/DA" in a:      # sem estilo gravado: usa a fonte do /DA
+                    fname, size, rgb = _parse_da(str(a.get("/DA")))
+                    low = fname.lower()
+                    style.setdefault("font", "courier" if "cour" in low else ("times" if "times" in low or "tiro" in low
+                                                                             else "helvetica"))
+                    style.setdefault("bold", "bold" in low)
+                    if size:
+                        style["size"] = size
+                    style.setdefault("color", min(COLORS, key=lambda k: sum((x - y) ** 2 for x, y in zip(COLORS[k], rgb))))
+                if nm.startswith(PREFIX_MARK) and "kind" not in style:
+                    contents = str(a.get("/Contents", ""))
+                    style["kind"] = next((k for k, v in MARKS.items() if v == contents), "check")
                 r = [float(v) for v in a["/Rect"]]
                 x0, y0, _x1, _y1 = geos[i].rect_to_display((min(r[0], r[2]), min(r[1], r[3]),
                                                              max(r[0], r[2]), max(r[1], r[3])))
-                kind = style.get("kind", "text") if nm.startswith(PREFIX_MARK) else "text"
+                kind = style.get("kind", "check") if nm.startswith(PREFIX_MARK) else "text"
+                size = style.get("size", 12.0)
+                if kind != "text":
+                    size = max(4.0, min(abs(r[2] - r[0]), abs(r[3] - r[1])))   # a marca ocupa o quadrado inteiro
                 out.append(Box(page=i, x=x0, y=y0, kind=kind, text=str(a.get("/Contents", "")) if kind == "text" else "",
                                font=style.get("font", "helvetica"), bold=style.get("bold", False),
-                               size=style.get("size", 12.0), color=style.get("color", "black"), id=nm))
+                               size=size, color=style.get("color", "black"), id=nm))
             except Exception:  # noqa: BLE001
                 continue
     return out
@@ -836,12 +862,8 @@ def apply(pdf, values: dict, boxes: list[Box]) -> None:
             continue
         keep = pikepdf.Array()
         for a in annots:
-            try:
-                nm = str(a.get("/NM", ""))
-                if a.get("/Subtype") == "/FreeText" and nm.startswith((PREFIX_TEXT, PREFIX_MARK)):
-                    continue
-            except Exception:  # noqa: BLE001
-                pass
+            if _is_prumo_box(a):
+                continue
             keep.append(a)
         page.obj["/Annots"] = keep
     for box in boxes:
@@ -886,10 +908,7 @@ def make_base(src, dest) -> None:
             keep = pikepdf.Array()
             for a in annots:
                 try:
-                    if a.objgen in hide:
-                        continue
-                    nm = str(a.get("/NM", ""))
-                    if a.get("/Subtype") == "/FreeText" and nm.startswith((PREFIX_TEXT, PREFIX_MARK)):
+                    if a.objgen in hide or _is_prumo_box(a):
                         continue
                 except Exception:  # noqa: BLE001
                     pass
@@ -939,9 +958,7 @@ def flatten(src, dest) -> int:
             ops = []
             for a in annots:
                 try:
-                    sub = a.get("/Subtype")
-                    nm = str(a.get("/NM", ""))
-                    flat = sub == "/Widget" or (sub == "/FreeText" and nm.startswith((PREFIX_TEXT, PREFIX_MARK)))
+                    flat = a.get("/Subtype") == "/Widget" or _is_prumo_box(a)
                     if not flat:
                         keep.append(a)
                         continue
