@@ -404,3 +404,20 @@ def test_boxes_made_on_the_iphone_are_read_and_replaced(tmp_path):
         subs = [str(a.Subtype) for a in pdf.pages[0].Annots]
     assert subs == ["/FreeText", "/FreeText"]          # trocadas pela forma do Windows, sem duplicar
     assert [b.id for b in forms.load(src).boxes] == ["prumo-tx-aaaaaaaaaaaaaaaa", "prumo-mk-bbbbbbbbbbbbbbbb"]
+
+
+def test_pdf_saved_by_the_iphone(tmp_path):
+    """PDF de verdade gravado pelo PDFKit no iPhone (teste FormTests, CI de 17/11/2026). O PDFKit grava no /AcroForm
+    cópias soltas dos campos (não os mesmos objetos da página) e não grava o /NM das caixas."""
+    import pikepdf
+    src = Path(__file__).resolve().parent / "data" / "iphone_formulario.pdf"
+    out = tmp_path / "ip.pdf"
+    shutil.copy(src, out)
+    d = forms.load(out)
+    assert {f.name: f.value for f in d.fields} == {"nome": "Maria Ação", "aceito": True}
+    forms.save(out, {"nome": "Outro nome", "aceito": False}, d.boxes)
+    assert {f.name: f.value for f in forms.load(out).fields} == {"nome": "Outro nome", "aceito": False}
+    # as caixas sem /NM e sem /PrumoID (antes da correção do iPhone) não são do Prumo: ficam como estão
+    with pikepdf.open(str(out)) as pdf:
+        subs = sorted(str(a.Subtype) for p in pdf.pages for a in p.Annots)
+    assert subs.count("/Ink") == 3 and subs.count("/FreeText") == 1

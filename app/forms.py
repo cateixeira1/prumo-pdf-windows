@@ -380,15 +380,44 @@ def _terminal_fields(acro):
     return out
 
 
+def _orphans(pdf, known) -> list:
+    """Campos que estão nas páginas mas fora do /AcroForm (o PDFKit do iPhone grava assim os campos que cria)."""
+    out = []
+    for page in pdf.pages:
+        for a in page.obj.get("/Annots", []) or []:
+            try:
+                if a.get("/Subtype") != "/Widget" or a.objgen in known:
+                    continue
+                node = a if "/T" in a else a.get("/Parent")
+                if node is None or "/FT" not in node and _inherited(node, "/FT") is None or node.objgen in known:
+                    continue
+                known.add(node.objgen)
+                kids = node.get("/Kids")
+                out.append((node, str(node.get("/T", "")), list(kids) if kids is not None and len(kids) else [node]))
+            except Exception:  # noqa: BLE001
+                continue
+    return out
+
+
+def _all_fields(pdf, acro) -> list:
+    found = _terminal_fields(acro) if acro is not None else []
+    known = set()
+    for node, _name, widgets in found:
+        for x in [node] + list(widgets):
+            try:
+                known.add(x.objgen)
+            except Exception:  # noqa: BLE001
+                pass
+    return found + _orphans(pdf, known)
+
+
 def _fields(pdf) -> tuple[list[Field], bool, bool]:
     acro = pdf.Root.get("/AcroForm")
-    if acro is None:
-        return [], False, False
-    xfa = "/XFA" in acro
+    xfa = acro is not None and "/XFA" in acro
     pages = _page_index(pdf)
     fields = []
     names = set()
-    for node, name, widgets in _terminal_fields(acro):
+    for node, name, widgets in _all_fields(pdf, acro):
         ft = str(_inherited(node, "/FT", "") or "")
         ff = int(_inherited(node, "/Ff", 0) or 0)
         if ft not in ("/Tx", "/Btn", "/Ch"):
@@ -402,7 +431,7 @@ def _fields(pdf) -> tuple[list[Field], bool, bool]:
             kind = "radio" if ff & (1 << 15) else "check"
         elif ft == "/Ch":
             kind = "combo" if ff & (1 << 17) else "list"
-        da = str(_inherited(node, "/DA", "") or acro.get("/DA", "") or "")
+        da = str(_inherited(node, "/DA", "") or (acro.get("/DA", "") if acro is not None else "") or "")
         fname, size, color = _parse_da(da)
         fam, bold = _font_family(pdf, acro, widgets[0] if widgets else node, fname)
         f = Field(name=name or f"campo{len(fields) + 1}", kind=kind, readonly=bool(ff & 1),
@@ -412,7 +441,6 @@ def _fields(pdf) -> tuple[list[Field], bool, bool]:
                   align=int(_inherited(node, "/Q", 0) or 0), tooltip=str(node.get("/TU", "") or ""))
         if f.name in names:
             continue
-        names.add(f.name)
         v = _inherited(node, "/V")
         for w in widgets:
             try:
@@ -435,7 +463,8 @@ def _fields(pdf) -> tuple[list[Field], bool, bool]:
             f.widgets.append(Widget(page, (min(r[0], r[2]), min(r[1], r[3]), max(r[0], r[2]), max(r[1], r[3])),
                                     states[0] if states else None, w.objgen))
         if not f.widgets:
-            continue
+            continue   # (o PDFKit grava no /AcroForm uma cópia solta do campo; o da página vem pelos "órfãos")
+        names.add(f.name)
         if kind == "check":
             on = {wd.on_state for wd in f.widgets if wd.on_state}
             vs = _text(v)
@@ -461,11 +490,19 @@ def _fields(pdf) -> tuple[list[Field], bool, bool]:
     return fields, xfa, xfa and not fields
 
 
+def box_id(a) -> str:
+    """Identificação da caixa: /NM, ou /PrumoID (o PDFKit do iPhone não grava o /NM)."""
+    try:
+        return str(a.get("/NM", "") or a.get("/PrumoID", "") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _is_prumo_box(a) -> bool:
     """Caixa do Prumo: texto (/FreeText "prumo-tx-") ou marca ("prumo-mk-": /FreeText no Windows, /Ink ou
     /Circle no iPhone)."""
     try:
-        nm = str(a.get("/NM", ""))
+        nm = box_id(a)
         sub = a.get("/Subtype")
     except Exception:  # noqa: BLE001
         return False
@@ -481,7 +518,7 @@ def _boxes(pdf, geos) -> list[Box]:
             try:
                 if not _is_prumo_box(a):
                     continue
-                nm = str(a.get("/NM", ""))
+                nm = box_id(a)
                 style = _parse_style(str(a.get("/PrumoStyle", "") or a.get("/DS", "")))
                 if "size" not in style and "/DA" in a:      # sem estilo gravado: usa a fonte do /DA
                     fname, size, rgb = _parse_da(str(a.get("/DA")))
@@ -792,6 +829,7 @@ def _box_annotation(pdf, page_index: int, geo: PageGeo, box: Box):
         P=pdf.pages[page_index].obj,
     )
     annot["/PrumoStyle"] = pikepdf.String(pstyle)
+    annot["/PrumoID"] = pikepdf.String(nm)
     annot["/AP"] = pikepdf.Dictionary(N=ap)
     box.id = nm
     return pdf.make_indirect(annot)
@@ -815,9 +853,9 @@ def apply(pdf, values: dict, boxes: list[Box]) -> None:
     import pikepdf
 
     acro = pdf.Root.get("/AcroForm")
-    if acro is not None:
-        known = {f.name: f for f in _fields(pdf)[0]}
-        for node, name, widgets in _terminal_fields(acro):
+    known = {f.name: f for f in _fields(pdf)[0]}
+    if known:
+        for node, name, widgets in _all_fields(pdf, acro):
             f = known.get(name or "")
             if f is None or f.readonly or name not in values:
                 continue
@@ -851,9 +889,9 @@ def apply(pdf, values: dict, boxes: list[Box]) -> None:
                 for w in live:
                     ws = _widget_states(w)
                     w["/AS"] = pikepdf.Name("/" + state) if state and state in ws else pikepdf.Name.Off
-        if "/XFA" in acro:
+        if acro is not None and "/XFA" in acro:
             del acro["/XFA"]   # os leitores passam a mostrar os campos AcroForm, que têm os valores novos
-        if acro.get("/NeedAppearances"):
+        if acro is not None and acro.get("/NeedAppearances"):
             acro["/NeedAppearances"] = False   # as aparências estão prontas
     geos = [page_geo(p) for p in pdf.pages]
     for i, page in enumerate(pdf.pages):
