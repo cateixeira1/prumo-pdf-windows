@@ -417,7 +417,19 @@ def test_pdf_saved_by_the_iphone(tmp_path):
     assert {f.name: f.value for f in d.fields} == {"nome": "Maria Ação", "aceito": True}
     forms.save(out, {"nome": "Outro nome", "aceito": False}, d.boxes)
     assert {f.name: f.value for f in forms.load(out).fields} == {"nome": "Outro nome", "aceito": False}
-    # as caixas sem /NM e sem /PrumoID (antes da correção do iPhone) não são do Prumo: ficam como estão
     with pikepdf.open(str(out)) as pdf:
         subs = sorted(str(a.Subtype) for p in pdf.pages for a in p.Annots)
-    assert subs.count("/Ink") == 3 and subs.count("/FreeText") == 1
+    assert subs.count("/FreeText") == 4 and "/Ink" not in subs   # caixas regravadas na forma do Windows
+
+
+def test_iphone_boxes_without_id_are_recognized_by_author(tmp_path):
+    """O arquivo real do iPhone (antes do /PrumoID) não tem /NM: as caixas são reconhecidas pelo autor "Prumo PDF"."""
+    src = Path(__file__).resolve().parent / "data" / "iphone_formulario.pdf"
+    out = tmp_path / "ip.pdf"
+    shutil.copy(src, out)
+    boxes = forms.load(out).boxes
+    assert [b.kind for b in boxes] == ["text", "check", "cross", "dot"]
+    assert boxes[0].text == "Caio Fernandes Teixeira\nOAB/SP 483.995" and boxes[0].bold and boxes[0].color == "blue"
+    assert boxes[2].color == "red"
+    forms.save(out, {}, boxes)
+    assert len(forms.load(out).boxes) == 4

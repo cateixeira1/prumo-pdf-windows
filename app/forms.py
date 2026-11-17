@@ -508,7 +508,13 @@ def _is_prumo_box(a) -> bool:
         return False
     if nm.startswith(PREFIX_MARK):
         return sub in ("/FreeText", "/Ink", "/Circle", "/Square")
-    return nm.startswith(PREFIX_TEXT) and sub == "/FreeText"
+    if nm.startswith(PREFIX_TEXT):
+        return sub == "/FreeText"
+    # sem identificação (o PDFKit pode descartar /NM e /PrumoID): autor "Prumo PDF" e tipo de caixa
+    try:
+        return not nm and str(a.get("/T", "")) == AUTHOR and sub in ("/FreeText", "/Ink")
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _boxes(pdf, geos) -> list[Box]:
@@ -519,6 +525,9 @@ def _boxes(pdf, geos) -> list[Box]:
                 if not _is_prumo_box(a):
                     continue
                 nm = box_id(a)
+                if not nm:   # reconhecida pelo autor: ganha um nome agora
+                    is_mark = a.get("/Subtype") == "/Ink" or str(a.get("/Contents", "")) in MARKS.values()
+                    nm = (PREFIX_MARK if is_mark else PREFIX_TEXT) + uuid.uuid4().hex[:16]
                 style = _parse_style(str(a.get("/PrumoStyle", "") or a.get("/DS", "")))
                 if "size" not in style and "/DA" in a:      # sem estilo gravado: usa a fonte do /DA
                     fname, size, rgb = _parse_da(str(a.get("/DA")))
