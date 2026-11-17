@@ -161,6 +161,18 @@ def apply_screen(win, screen: str):
     elif screen == "rename":
         win.push(DocumentScreen(win, pet.id))
         QTimer.singleShot(300, lambda: win.actions.rename(pet))
+    elif screen == "form":
+        import forms
+        import forms_ui
+        win.push(DocumentScreen(win, pet.id))
+        fs = forms_ui.open_form(win, pet)
+        if fs is not None:
+            fs.boxes += [forms.Box(0, 330, 262, text="Caio Fernandes Teixeira\nOAB/SP 483.995", size=12, bold=True,
+                                   color="blue"),
+                         forms.Box(0, 306, 264, kind="check", size=14, color="blue")]
+            fs.view.select(fs.boxes[0])
+            fs.commit()
+            fs.view.update()
     elif screen == "reader":
         from reader import ReaderScreen
         r = ReaderScreen(win, pet.id)

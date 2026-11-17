@@ -114,14 +114,14 @@ jobs:
         shell: powershell
         run: |
           $demo = Join-Path $env:RUNNER_TEMP "demo\Prumo PDF"
-          foreach ($s in @("home", "all", "detail", "folder", "reader", "readertext", "crop", "number", "sign", "lock")) {
+          foreach ($s in @("home", "all", "detail", "folder", "reader", "readertext", "crop", "number", "sign", "lock", "form")) {
             $argv = @("app\main.py", "--demo", "`"$demo`"", "--screen", $s, "--shot", "`"$env:OUT\screenshots\$s.png`"")
             $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList $argv -PassThru
             if (-not $p.WaitForExit(120000)) { $p.Kill(); "timeout: $s" }
           }
           # Outros idiomas: conferir que a interface não tem português (o teste test_i18n já confere os textos)
           foreach ($lang in @("en", "de", "ja")) {
-            foreach ($s in @("home", "detail", "reader", "readertext", "settings")) {
+            foreach ($s in @("home", "detail", "reader", "readertext", "settings", "form")) {
               $argv = @("app\main.py", "--demo", "`"$demo`"", "--keep", "--lang", $lang, "--screen", $s, "--shot", "`"$env:OUT\screenshots\$lang-$s.png`"")
               $p = Start-Process -FilePath ".venv\Scripts\python.exe" -ArgumentList $argv -PassThru
               if (-not $p.WaitForExit(120000)) { $p.Kill(); "timeout: $lang $s" }

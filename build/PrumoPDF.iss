@@ -2,7 +2,7 @@
 ; Gerado pelo build.ps1. O motor de OCR (Tesseract) vai dentro da pasta do aplicativo ({app}\tesseract).
 
 #define AppName "Prumo PDF"
-#define AppVersion "1.15.1"
+#define AppVersion "1.16.0"
 #define AppExe "PrumoPDF.exe"
 
 [Setup]

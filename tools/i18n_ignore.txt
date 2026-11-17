@@ -76,3 +76,5 @@ PDF (*.pdf)
 ZIP (*.zip)
 # Nome de arquivo das miniaturas no disco
 {}-{}.png
+# Fontes das caixas de texto dos formulários
+Times

@@ -32,7 +32,9 @@ IGNORE_FILE = Path(__file__).resolve().parent / "i18n_ignore.txt"
 SKIP_FILES = {"demo.py", "page_ocr.py", "page_merge.py", "page_extract.py", "ui_common.py", "i18n.py",
               "ios_theme.py", "machine.py", "ocr_plugin.py", "ocr_runner.py",
               # chamadas ao Windows (nomes de propriedades, comandos e detalhes técnicos dos erros, em inglês)
-              "wincert.py", "protection.py", "winsys.py"}
+              "wincert.py", "protection.py", "winsys.py",
+              # formulários: só sintaxe de PDF (operadores, fontes); as mensagens já estão em outros arquivos
+              "forms.py"}
 SKIP_FUNCS = {("main.py", "run_classic"), ("main.py", "self_test"), ("main.py", "run_gui"),
               ("main.py", "_server_name"), ("ocr_worker.py", "_write_txt")}
 TR_FUNCS = {"tr", "trf", "trn", "tr_in", "trf_in"}

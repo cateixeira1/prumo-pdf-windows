@@ -630,7 +630,18 @@ class FlowGrid(QWidget):
         self.items = []
         self._relayout()
 
+    HYSTERESIS = 24   # mais que a largura da barra de rolagem
+
     def columns(self, width: int) -> int:
+        cols = self._columns(width)
+        # Folga: a barra de rolagem que aparece ou some muda a largura em ~16 px. Se isso trocasse o número de
+        # colunas, a altura mudava, a barra sumia de novo, e assim por diante (a janela travava num vaivém).
+        last = getattr(self, "_last_cols", None)
+        if last is not None and cols < last <= self._columns(width + self.HYSTERESIS):
+            return last
+        return cols
+
+    def _columns(self, width: int) -> int:
         cols = max(2, min(self.max_cols, (width + SPACING) // (self.min_col + SPACING)))
         if self.allowed:
             return max([c for c in self.allowed if c <= cols] or [min(self.allowed)])
@@ -652,16 +663,35 @@ class FlowGrid(QWidget):
     def resizeEvent(self, e):
         self._relayout()
 
+    _busy = False
+    _again = False
+
     def _relayout(self):
-        h = self._layout(self.width(), apply=True)
-        if self.minimumHeight() != h:
-            self.setFixedHeight(h)
+        # Mudar a altura pode fazer a barra de rolagem aparecer ou sumir, o que muda a largura, que muda a altura
+        # de novo, dentro do mesmo resizeEvent. Sem a trava, isso podia se repetir até estourar a pilha (aconteceu
+        # em espanhol, na tela do PDF). Com ela, a grade refaz o desenho no máximo 3 vezes e para.
+        if self._busy:
+            self._again = True
+            return
+        self._busy = True
+        try:
+            for _ in range(3):
+                self._again = False
+                h = self._layout(self.width(), apply=True)
+                if self.minimumHeight() != h:
+                    self.setFixedHeight(h)
+                if not self._again:
+                    break
+        finally:
+            self._busy = False
 
     def _layout(self, width: int, apply: bool) -> int:
         visible = [w for w in self.items if not w.isHidden()]
         if not visible or width <= 0:
             return 0
         cols = self.columns(width)
+        if apply:
+            self._last_cols = cols
         cw = (width - SPACING * (cols - 1)) / cols
         y = 0
         for r in range(0, len(visible), cols):

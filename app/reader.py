@@ -954,6 +954,8 @@ class ToolPanel(QScrollArea):
         self._button("number", "Numerar páginas", "numbers", s.tool_number, "indigo")
 
         self._title("Documento")
+        self._button("fill", "Preencher formulário", "form", s.tool_fill, "orange",
+                     "Campos do PDF ou texto em qualquer lugar da página")
         self._button("sign", "Assinar digitalmente", "signature", s.tool_sign, "blue")
         self._button("ocr", "Fazer OCR", "textscan", s.tool_ocr, "orange")
         self._button("organize", "Organizar páginas", "grid", s.tool_organize, "purple")
@@ -1010,6 +1012,7 @@ class ToolPanel(QScrollArea):
         for k in ("extract", "split", "merge", "duplicate"):
             self.buttons[k].setEnabled(not locked)
         self.buttons["compress"].setEnabled(not locked and not signed)
+        self.buttons["fill"].setEnabled(not locked and not signed)
         self.buttons["protect"].setEnabled(not signed)
         self.buttons["sign"].setEnabled(not locked)
         self.buttons["ocr"].setEnabled(editable and lib.needs_ocr_attention(item))
@@ -1706,6 +1709,10 @@ class _ReaderBase(Screen):
             screens.unprotect_dialog(self.app, item)
         else:
             screens.protect_dialog(self.app, item)
+
+    def tool_fill(self):
+        import forms_ui
+        forms_ui.open_form(self.app, self._current_item())
 
     def tool_compress(self):
         import screens

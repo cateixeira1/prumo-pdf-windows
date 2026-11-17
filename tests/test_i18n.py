@@ -180,8 +180,9 @@ class ScreensInEveryLanguage(unittest.TestCase):
         ios_theme.T.setup("light")
         cls.tmp = Path(tempfile.mkdtemp(prefix="prumo_i18n_"))
         src = cls.tmp / "src"
+        from fixtures import form_pdf
         cls.files = [digital_pdf(src / "Alpha.pdf", 6), digital_pdf(src / "Beta.pdf", 3),
-                     scanned_pdf(src / "Gamma.pdf", 1)]
+                     scanned_pdf(src / "Gamma.pdf", 1), form_pdf(src / "Delta.pdf")]
         i18n.install_hooks()
         cls.col = Collector()
         col = cls.col
@@ -193,6 +194,7 @@ class ScreensInEveryLanguage(unittest.TestCase):
                 if isinstance(x, str):
                     col.add(i18n.tr(x), "pintado")
             return orig_draw(self, *a, **k)
+        import forms_ui
         import reader
         import screens
         cls._orig = (QPainter.drawText, ios_kit._Overlay.run, ios_kit.styled_menu)
@@ -214,17 +216,18 @@ class ScreensInEveryLanguage(unittest.TestCase):
             def exec(self, *a, **k):
                 col.menu(self)
                 return None
-        for mod in (ios_kit, screens, reader):
+        for mod in (ios_kit, screens, reader, forms_ui):
             mod.styled_menu = CollectedMenu
 
     @classmethod
     def tearDownClass(cls):
         import ios_kit
         from PySide6.QtGui import QPainter
+        import forms_ui
         import reader
         import screens
         QPainter.drawText, ios_kit._Overlay.run, menu = cls._orig
-        for mod in (ios_kit, screens, reader):
+        for mod in (ios_kit, screens, reader, forms_ui):
             mod.styled_menu = menu
         i18n.set_language("pt")
         shutil.rmtree(cls.tmp, ignore_errors=True)
@@ -246,7 +249,7 @@ class ScreensInEveryLanguage(unittest.TestCase):
         w.show()
         try:
             w.import_paths(self.files)
-            self.assertTrue(wait(lambda: len(w.lib.items) == 3 and all(i.page_count for i in w.lib.items)))
+            self.assertTrue(wait(lambda: len(w.lib.items) == len(self.files) and all(i.page_count for i in w.lib.items)))
             w.lib.create_folder("Zeta")
             w.lib.reload()
             alpha = next(i for i in w.lib.items if i.name == "Alpha")
@@ -286,7 +289,8 @@ class ScreensInEveryLanguage(unittest.TestCase):
             # ferramentas da tela inicial (cada uma abre o seletor de PDF)
             for key, title in (("read", "Ler qual PDF?"), ("ocr", "Fazer OCR de quais PDFs?"),
                                ("organize", "Organizar qual PDF?"), ("split", "Dividir qual PDF?"),
-                               ("sign", "Assinar qual PDF?"), ("compress", "Comprimir qual PDF?")):
+                               ("sign", "Assinar qual PDF?"), ("compress", "Comprimir qual PDF?"),
+                               ("fill", "Preencher qual PDF?")):
                 col.where = f"{lang}: ferramenta {key}"
                 screens.run_tool(w, key, title)
             # folhas e alertas das ferramentas
@@ -336,6 +340,27 @@ class ScreensInEveryLanguage(unittest.TestCase):
             look("modo texto")
             if hasattr(t, "_menu"):
                 t._menu()
+            w.back(force=True)
+            # preencher formulário: com campos (barra, menus, finalizar) e sem campos (aviso)
+            import forms_ui
+            delta = next(i for i in w.lib.items if i.name == "Delta")
+            col.where = f"{lang}: preencher"
+            fs = forms_ui.open_form(w, delta)
+            self.assertIsNotNone(fs)
+            pump(300)
+            look("preencher formulário")
+            fs.bar._font_menu()
+            fs.bar._size_menu()
+            fs.bar._color_menu()
+            fs.set_tool("text")
+            look("preencher: texto")
+            fs.finalize()
+            fs.values["nome"] = "x"
+            fs.can_leave()
+            w.back(force=True)
+            forms_ui.open_form(w, alpha)
+            pump(100)
+            look("preencher sem campos")
             w.back(force=True)
         finally:
             w.jobs.cancel_all()

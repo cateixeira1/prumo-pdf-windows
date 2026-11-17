@@ -157,6 +157,7 @@ class Actions:
             menu_action(m, "Fazer OCR", "textscan", lambda: self.ocr(item))
         menu_action(m, "Organizar páginas", "grid", lambda: self.app.organize(item))
         if not item.meta.locked:
+            menu_action(m, "Preencher formulário…", "form", lambda: _open_form(self.app, item))
             menu_action(m, "Comprimir PDF…", "compress", lambda: compress_dialog(self.app, item))
         menu_action(m, "Remover dos favoritos" if item.meta.favorite else "Favoritar", "star",
                     lambda: self.toggle_favorite(item))
@@ -403,6 +404,10 @@ class HomeScreen(Screen):
         hb.addWidget(self.folders)
         hb.addWidget(SectionTitle("Ferramentas"))
         hb.addWidget(self.tools)
+        self.fill = WideTile("Preencher formulário", "form", "orange",
+                             subtitle="Campos do PDF ou texto em qualquer lugar da página")
+        self.fill.clicked.connect(lambda: self._tool("fill"))
+        hb.addWidget(self.fill)
         self.convert = WideTile("Converter em PDF", "convert", "teal",
                                 subtitle="Fotos e imagens (JPG, PNG, HEIC do iPhone), Word, Excel, PowerPoint, texto")
         self.convert.clicked.connect(lambda: app.convert_dialog(""))
@@ -425,7 +430,7 @@ class HomeScreen(Screen):
                    "remove": "Remover páginas de qual PDF?", "extract": "Extrair páginas de qual PDF?",
                    "split": "Dividir qual PDF?", "crop": "Cortar ou girar páginas de qual PDF?",
                    "number": "Numerar as páginas de qual PDF?", "sign": "Assinar qual PDF?",
-                   "compress": "Comprimir qual PDF?"}
+                   "compress": "Comprimir qual PDF?", "fill": "Preencher qual PDF?"}
 
     def _tool(self, key):
         run_tool(self.app, key, self.TOOL_TITLES[key])
@@ -461,7 +466,7 @@ class HomeScreen(Screen):
 
 SIGNED_EDIT_MSG = ("Este PDF está assinado digitalmente: qualquer alteração invalidaria a assinatura. Use o "
                    "original (sem assinatura) para mudar páginas, cortar, numerar ou destacar.")
-EDIT_TOOLS = {"organize", "insert", "remove", "crop", "number", "dewarp", "protect"}
+EDIT_TOOLS = {"organize", "insert", "remove", "crop", "number", "dewarp", "protect", "fill"}
 
 
 def blocked_signed(app, item) -> bool:
@@ -513,6 +518,8 @@ def run_tool(app, key, title):
         sign_ui.sign_dialog(app, item)
     elif key == "compress":
         compress_dialog(app, item)
+    elif key == "fill":
+        _open_form(app, item)
 
 
 # --- Listas e pastas ------------------------------------------------------------
@@ -993,6 +1000,8 @@ class DocumentScreen(Screen):
         def edit(fn):
             return lambda: None if blocked_signed(app, lib.item(item.id) or item) else fn()
 
+        tile("Preencher formulário", "form", "orange", edit(lambda: _open_form(app, lib.item(item.id) or item)),
+             subtitle="Campos do PDF ou texto na página", rounded=True, dimmed=signed)
         tile("Organizar páginas", "grid", "purple", edit(lambda: app.organize(item)),
              count=str(pages) if pages else None, subtitle="Arrastar, girar, excluir", rounded=True, dimmed=signed)
         tile("Incluir páginas", "plusrect", "teal", edit(lambda: include_pages_dialog(app, item)),
@@ -1638,6 +1647,13 @@ def unprotect_dialog(app, item):
         return
     app.toast(trf("Cópia sem senha: {}", new.name), "Abrir", lambda: app.open_document(new.id))
 
+
+
+# --- Preencher formulário (tela em forms_ui.py) ---------------------------------------
+
+def _open_form(app, item):
+    import forms_ui
+    return forms_ui.open_form(app, item)
 
 
 # --- Comprimir ---------------------------------------------------------------------

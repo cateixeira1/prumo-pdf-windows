@@ -266,6 +266,14 @@ GLYPHS = {
     "crop": '<path d="M7 3v14h14"/><path d="M3 7h14v14"/>',
     "numbers": '<path d="M3.8 9.4l2-1.4v8.5"/><path d="M9.4 10a2.2 2.2 0 0 1 4.3 0c0 2.4-4.3 3.6-4.3 6.5h4.4"/><path d="M16.2 8h4l-2.4 3.2a2.4 2.4 0 1 1-1.8 4.3"/>',
     "computer": '<rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M9 20h6M12 16.5V20"/>',
+    "form": '<path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4"/><rect x="9" y="10.5" width="6" height="3" rx=".6"/>'
+            '<path d="M9 16.8h3.5"/><path d="M14.2 19.8l5.6-5.6 1.4 1.4-5.6 5.6h-1.4z" fill="#FG" stroke-width="1.2"/>',
+    "textbox": '<rect x="3.5" y="5.5" width="17" height="13" rx="1.8" stroke-dasharray="2.4 2.2"/><path d="M8.5 9h7M12 9v6.5"/>',
+    "checkmark": '<path d="M5.5 12.5l4.2 4.2 8.8-9.4" stroke-width="2.4"/>',
+    "dot": '<circle cx="12" cy="12" r="5" fill="#FG"/>',
+    "bold": '<path d="M7.5 4.5h5.2a3.6 3.6 0 0 1 0 7.2H7.5zM7.5 11.7h6.1a3.9 3.9 0 0 1 0 7.8H7.5z" stroke-width="2.4"/>',
+    "textsize": '<path d="M3.5 8.5V6.5h9v2M8 6.5v12M6 18.5h4"/><path d="M13.5 12.5V11h7v1.5M17 11v7.5M15.6 18.5h2.8"/>',
+    "pointer": '<path d="M6 3.8l12.2 9.3-5.4.7 3.1 6.1-2.3 1.2-3.1-6.2-4.1 3.9z"/>',
     "library": '<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/>'
                '<path d="M16.2 5.2l3.6-.9 3 15.2-3.6.9z" transform="translate(-2 0)"/>',
 }
